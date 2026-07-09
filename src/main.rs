@@ -22,8 +22,19 @@ use crate::{
     },
 };
 
+mod serve;
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Some(port) = cli.listen {
+        return serve::run(port, cli.output_file);
+    }
+
+    let file = cli
+        .file
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("a collection file is required unless --listen is used"))?;
 
     let env_output_mode = match std::env::var("TOAD_OUTPUT").as_deref() {
         Ok("quiet") => OutputFormat::Quiet,
@@ -52,13 +63,13 @@ fn main() -> Result<()> {
         OutputFormat::RequestOnly => Box::new(RequestOnlyOutput {}),
     };
 
-    let content = fs::read_to_string(&cli.file)
-        .with_context(|| format!("could not read {}", cli.file.display()))?;
+    let content =
+        fs::read_to_string(file).with_context(|| format!("could not read {}", file.display()))?;
 
     let mut rf: RequestFile = toml::from_str(&content)
-        .with_context(|| format!("could not parse {}", cli.file.display()))?;
+        .with_context(|| format!("could not parse {}", file.display()))?;
 
-    load_ext_body(&mut rf, &cli.file)?;
+    load_ext_body(&mut rf, file)?;
 
     let requests = load_requests(&rf, cli.requests.as_deref())?;
 
