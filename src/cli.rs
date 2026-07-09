@@ -4,8 +4,8 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "toad", about = "A developer-friendly REST client")]
 pub struct Cli {
-    /// Path to the collection file
-    pub file: PathBuf,
+    /// Path to the collection file (omit when using --listen)
+    pub file: Option<PathBuf>,
 
     /// Name of the request to run (omits runs all)
     pub requests: Option<String>,
@@ -21,6 +21,14 @@ pub struct Cli {
     // Optional profile name to use for vars
     #[arg(short, long)]
     pub profile: Option<String>,
+
+    /// Listen for inbound requests on this port and log/record them, instead of running a collection
+    #[arg(long, conflicts_with = "file")]
+    pub listen: Option<u16>,
+
+    /// Append captured request output to this file (only used with --listen)
+    #[arg(long, requires = "listen")]
+    pub output_file: Option<PathBuf>,
 }
 
 #[derive(ValueEnum, Clone, Default, PartialEq)]
