@@ -6,6 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
+use crate::ca::load_custom_ca_certificates;
 use crate::collection::{Config, RequestDef};
 use crate::interpolate::interpolate;
 
@@ -16,6 +17,7 @@ pub fn execute_request(
     req: &RequestDef,
     vars: &HashMap<String, String>,
     config: Config,
+    ca_password: Option<&str>,
     output: &dyn OutputMode,
 ) -> Result<()> {
     let url = interpolate(&req.url, vars);
@@ -44,10 +46,19 @@ pub fn execute_request(
         None
     };
 
-    let client = Client::builder()
+    let mut client_builder = Client::builder()
         .timeout(std::time::Duration::from_secs(req.timeout_secs))
-        .danger_accept_invalid_certs(config.ignore_ssl)
-        .build()?;
+        .danger_accept_invalid_certs(config.ignore_ssl);
+
+    if let Some(ca_path) = &config.use_custom_ca {
+        let certs = load_custom_ca_certificates(ca_path, ca_password)
+            .with_context(|| format!("could not load custom CA for request '{name}'"))?;
+        for cert in certs {
+            client_builder = client_builder.add_root_certificate(cert);
+        }
+    }
+
+    let client = client_builder.build()?;
 
     let mut builder = client
         .request(reqwest::Method::from_bytes(method.as_bytes())?, &url)

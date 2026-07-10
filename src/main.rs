@@ -8,7 +8,7 @@ use cli::{Cli, OutputFormat};
 mod interpolate;
 
 mod collection;
-use collection::{RequestFile, load_requests};
+use collection::{RequestFile, load_requests, resolve_custom_ca};
 
 mod executor;
 use executor::execute_request;
@@ -23,6 +23,8 @@ use crate::{
 };
 
 mod serve;
+
+mod ca;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -66,10 +68,20 @@ fn main() -> Result<()> {
     let content =
         fs::read_to_string(file).with_context(|| format!("could not read {}", file.display()))?;
 
-    let mut rf: RequestFile = toml::from_str(&content)
-        .with_context(|| format!("could not parse {}", file.display()))?;
+    let mut rf: RequestFile =
+        toml::from_str(&content).with_context(|| format!("could not parse {}", file.display()))?;
 
     load_ext_body(&mut rf, file)?;
+    resolve_custom_ca(&mut rf.config, file);
+
+    if let Some(ca_path) = &cli.use_custom_ca {
+        rf.config.use_custom_ca = Some(ca_path.to_string_lossy().to_string());
+    }
+
+    let ca_password = cli
+        .use_custom_ca_password
+        .clone()
+        .or_else(|| std::env::var("TOAD_CA_PASSWORD").ok());
 
     let requests = load_requests(&rf, cli.requests.as_deref())?;
 
@@ -91,9 +103,16 @@ fn main() -> Result<()> {
     }
 
     for (name, req) in &requests {
-        let result = execute_request(name, req, &rf.vars, rf.config, output.as_ref());
+        let result = execute_request(
+            name,
+            req,
+            &rf.vars,
+            rf.config.clone(),
+            ca_password.as_deref(),
+            output.as_ref(),
+        );
         if let Err(e) = result {
-            output.request_error(name, format!("{}", e).as_str());
+            output.request_error(name, format!("{:?}", e).as_str());
             std::process::exit(1);
         }
     }

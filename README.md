@@ -91,3 +91,31 @@ responding with `200 OK`. This is handy for inspecting what a webhook or client 
   detail (headers + body) goes to the file.
 
 - `--listen` and a collection file are mutually exclusive — listen mode doesn't use a TOML file at all.
+
+### Custom CA
+
+If a server presents a certificate signed by a CA that isn't in your system's trust
+store (an internal/corporate root, for example), point toad at it instead of falling
+back to `ignore_ssl`:
+
+```toml
+[config]
+use_custom_ca = "./internal-ca.pem"
+```
+
+The path is resolved relative to the collection file. The file itself is
+content-sniffed, so it can be:
+
+- A PEM file or bundle (one or more `-----BEGIN CERTIFICATE-----` blocks)
+- A Java KeyStore (`.jks`)
+- A PKCS12 keystore (`.p12`/`.pfx`)
+
+`toad test.toml --use-custom-ca ./other-ca.pem` overrides whatever `use_custom_ca`
+is set to in the TOML.
+
+JKS and PKCS12 files are password protected. Toad never reads a keystore password
+from the TOML file itself (so it can't end up committed to source control) — supply
+it with `--use-custom-ca-password` or the `TOAD_CA_PASSWORD` environment variable
+(the flag wins if both are set). PEM files don't need a password.
+
+See [doc/custom_ca.md](doc/custom_ca.md) for more detail, including troubleshooting.
