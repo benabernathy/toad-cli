@@ -29,6 +29,16 @@ pub struct Cli {
     /// Append captured request output to this file (only used with --listen)
     #[arg(long, requires = "listen")]
     pub output_file: Option<PathBuf>,
+
+    /// Path to a custom CA bundle (PEM, JKS, or PKCS12) to trust, overriding any
+    /// `use_custom_ca` set in the collection file's [config]
+    #[arg(long)]
+    pub use_custom_ca: Option<PathBuf>,
+
+    /// Password for the custom CA keystore (JKS/PKCS12 only; not needed for PEM).
+    /// Falls back to the TOAD_CA_PASSWORD environment variable if unset.
+    #[arg(long)]
+    pub use_custom_ca_password: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Default, PartialEq)]

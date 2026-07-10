@@ -22,10 +22,13 @@ pub struct RequestFile {
     pub requests: IndexMap<String, RequestDef>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     #[serde(default)]
     pub ignore_ssl: bool,
+
+    #[serde(default)]
+    pub use_custom_ca: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -58,7 +61,17 @@ fn default_timeout() -> u64 {
     30
 }
 
+fn resolve_relative(path: &str, base_dir: &Path) -> PathBuf {
+    if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        base_dir.join(path)
+    }
+}
+
 pub fn load_ext_body(rf: &mut RequestFile, request_file_path: &Path) -> Result<()> {
+    let base_dir = request_file_path.parent().unwrap_or(Path::new("."));
+
     for (request_name, request) in &mut rf.requests {
         match (&request.body, &request.body_file) {
             (Some(_), Some(_)) => {
@@ -68,14 +81,7 @@ pub fn load_ext_body(rf: &mut RequestFile, request_file_path: &Path) -> Result<(
                 ));
             }
             (None, Some(path)) => {
-                let body_path = if Path::new(path).is_absolute() {
-                    PathBuf::from(path)
-                } else {
-                    request_file_path
-                        .parent()
-                        .unwrap_or(Path::new("."))
-                        .join(path)
-                };
+                let body_path = resolve_relative(path, base_dir);
 
                 let content = fs::read_to_string(body_path).with_context(|| {
                     format!(
@@ -89,6 +95,18 @@ pub fn load_ext_body(rf: &mut RequestFile, request_file_path: &Path) -> Result<(
         }
     }
     Ok(())
+}
+
+pub fn resolve_custom_ca(config: &mut Config, request_file_path: &Path) {
+    let base_dir = request_file_path.parent().unwrap_or(Path::new("."));
+
+    if let Some(path) = &config.use_custom_ca {
+        config.use_custom_ca = Some(
+            resolve_relative(path, base_dir)
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
 }
 
 pub fn load_requests(rf: &RequestFile, name: Option<&str>) -> Result<Vec<(String, RequestDef)>> {
