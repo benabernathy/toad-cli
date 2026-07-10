@@ -10,7 +10,6 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 ---
 
 ## v0.3.0 — TLS & Security
-- [ ] `use_system_ca` — use the OS certificate store
 - [ ] `use_custom_ca` — point to a custom CA bundle file
 - [ ] Authentication helpers — `auth = "bearer {{token}}"` shorthand instead of manually setting the Authorization header
 - [✅] Basic REST service provider — `--listen <PORT>` captures and logs inbound requests (URL, headers, body) and always responds `200 OK`; `--output-file` appends captures to a file instead of stdout
