@@ -92,6 +92,22 @@ responding with `200 OK`. This is handy for inspecting what a webhook or client 
 
 - `--listen` and a collection file are mutually exclusive — listen mode doesn't use a TOML file at all.
 
+### Authentication
+
+Instead of hand-building an `Authorization` header, use the `auth` shorthand:
+
+```toml
+[get-user]
+method = "GET"
+url = "{{base_url}}/users/1"
+auth = "bearer {{token}}"
+```
+
+`bearer` and `basic` (`auth = "basic {{user}}:{{pass}}"`, base64-encoded for you) are both supported.
+Set `auth` in `[config]` to apply it to every request in the collection by default, and override it
+per-request when needed. See [doc/auth.md](doc/auth.md) for details, precedence rules, and
+troubleshooting.
+
 ### Custom CA
 
 If a server presents a certificate signed by a CA that isn't in your system's trust
