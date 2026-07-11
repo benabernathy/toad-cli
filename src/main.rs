@@ -26,6 +26,8 @@ mod serve;
 
 mod ca;
 
+mod auth;
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 

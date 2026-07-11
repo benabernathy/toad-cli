@@ -30,6 +30,22 @@ pub fn execute_request(
         header_map.insert(HeaderName::from_str(k)?, HeaderValue::from_str(&v)?);
     }
 
+    if let Some(raw_auth) = req.auth.as_deref().or(config.auth.as_deref()) {
+        if header_map.contains_key(reqwest::header::AUTHORIZATION) {
+            return Err(anyhow!(
+                "request '{}' sets both 'auth' and a manual 'Authorization' header - use only one",
+                name
+            ));
+        }
+        let interpolated_auth = interpolate(raw_auth, vars);
+        let auth_value = crate::auth::build_authorization_value(&interpolated_auth)
+            .with_context(|| format!("invalid auth value in request '{name}'"))?;
+        header_map.insert(
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(&auth_value)?,
+        );
+    }
+
     // build body
     let body_bytes = if let Some(body) = &req.body {
         let interpolated = interpolate(body, vars);

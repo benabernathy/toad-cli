@@ -29,6 +29,9 @@ pub struct Config {
 
     #[serde(default)]
     pub use_custom_ca: Option<String>,
+
+    #[serde(default)]
+    pub auth: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -47,6 +50,9 @@ pub struct RequestDef {
     pub body: Option<String>,
 
     pub body_file: Option<String>,
+
+    #[serde(default)]
+    pub auth: Option<String>,
 
     pub expect_status: Option<Vec<u16>>,
 
