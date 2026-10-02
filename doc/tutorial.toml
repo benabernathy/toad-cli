@@ -1,0 +1,59 @@
+# The finished collection from the toad getting started tutorial.
+# See doc/getting_started.md.
+
+[config]
+expect_max_ms = 2000
+retry = 2
+retry_delay_ms = 500
+
+[vars]
+base_url = "https://jsonplaceholder.typicode.com"
+user_id = "1"
+token = "tutorial-token"
+
+[profiles.listen]
+base_url = "http://localhost:8080"
+
+[get-post]
+url = "{{base_url}}/posts/11"
+expect_status = [200]
+
+[get-post.capture]
+user_id = "$.userId"
+
+[get-author]
+url = "{{base_url}}/users/{{user_id}}"
+expect_status = [200]
+
+[get-author.capture]
+author_name = "$.name"
+author_email = "$.email"
+
+[list-user-posts]
+url = "{{base_url}}/posts"
+expect_status = [200]
+
+[list-user-posts.query]
+userId = "{{user_id}}"
+_limit = "2"
+
+[create-post]
+method = "POST"
+url = "{{base_url}}/posts"
+auth = "bearer {{token}}"
+expect_status = [201]
+retry = 0
+body = '''
+{
+  "title": "Hello from toad",
+  "body": "My first post",
+  "userId": {{user_id}}
+}
+'''
+
+[create-post.headers]
+X-Request-Source = "toad-tutorial"
+
+[missing-user]
+url = "{{base_url}}/users/999999"
+expect_status = [404]

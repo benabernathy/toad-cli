@@ -16,6 +16,9 @@ to the frustations I experienced with Postman and Jetclient. As I was thinking a
 
 ## Quick Start
 
+New to toad? The [Getting Started tutorial](doc/getting_started.md) walks through building a collection step by
+step. All the guides are listed in [doc/README.md](doc/README.md).
+
 It's pretty simple, you create a toml file that defines your operations and then you give the file to toad.
 
 You can do some cool stuff like this:
