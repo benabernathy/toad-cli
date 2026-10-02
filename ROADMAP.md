@@ -42,4 +42,4 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ## Contributing
 
-Feature requests and bug reports are welcome via [GitHub Issues](https://github.com/benabernathy/toad-cli/issues). If you'd like to contribute, please open an issue first to discuss the change.
+Feature requests and bug reports are welcome via [GitHub Issues](https://github.com/benabernathy/toad-cli/issues). If you'd like to contribute, please open an issue first to discuss the change. See [Contributing](README.md#contributing) for the checks CI runs.
