@@ -13,6 +13,7 @@ from a single request up to a CI smoke test.
 | [Output Format](output_format.md)          | The output modes (`normal`, `quiet`, `silent`, `verbose`, `response-only`, `request-only`) and `TOAD_OUTPUT` |
 | [Authentication](auth.md)                  | The `auth` shorthand for bearer and basic auth, and setting a default in `[config]` |
 | [Custom CA](custom_ca.md)                  | Trusting an internal or corporate CA with a PEM, JKS, or PKCS12 file            |
+| [Environment Variables](env_vars.md)       | Reading values from the environment with `{{env:NAME}}`, and the check toad runs before sending anything |
 | [Variable Capture](variable_capture.md)    | Capturing values from a response with JSONPath, headers, or status, using them in later requests, and sending literal `{{...}}` text |
 | [Response Time Assertions](response_time.md) | Failing slow requests with `expect_max_ms`, and scaling limits with `--time-scale` |
 | [Retry on Failure](retry.md)               | Retrying failed requests with `retry`, and what counts as a failure             |
@@ -57,7 +58,8 @@ with `ignore_config` (see [Ignoring Config Settings](variable_capture.md#ignorin
 | `ignore_config`                  | request            | [Variable Capture](variable_capture.md#ignoring-config-settings) |
 
 `method`, `url`, `headers`, `query`, `body`, `body_file`, `expect_status`, `timeout_secs`, `[vars]`, and
-`[profiles]` are shown in the [main README](../README.md#quick-start).
+`[profiles]` are shown in the [main README](../README.md#quick-start). Any of their string values can read the
+environment with `{{env:NAME}}` (see [Environment Variables](env_vars.md)).
 
 ## Other Files in This Directory
 

@@ -94,8 +94,8 @@ Because objects and arrays become JSON text, you can insert them directly into a
 - **Capture definitions are checked before any request is sent.** A malformed JSONPath query or an invalid capture
   source stops toad before it makes a request.
 - **Undefined variables are an error.** If a request uses `{{name}}` and `name` is not defined in `[vars]`, the
-  selected profile, or an earlier capture, the request fails before it is sent. Earlier versions of toad sent the
-  literal text `{{name}}`. To send `{{...}}` on purpose, see [Sending Literal Braces](#sending-literal-braces).
+  selected profile, or an earlier capture, toad reports it before sending any request in the run. Earlier versions
+  of toad sent the literal text `{{name}}`. To send `{{...}}` on purpose, see [Sending Literal Braces](#sending-literal-braces).
 
 ## Examples
 
@@ -499,6 +499,7 @@ Other output modes do not print captured values. Verbose output already prints r
   uses `{{user_id}}` but nothing defined it. Either the request that captures it did not run (you ran a single
   request, or it comes later in the file), or the name is misspelled. Add a default to `[vars]` or check the
   capture table. If the braces are meant for the server, see [Sending Literal Braces](#sending-literal-braces).
+  Toad reports this before sending any request, so earlier requests in the run are not sent either.
 - **"missing escaped value, expected `b`, `e`, ..."** pointing at `\{{`: you used the escape inside a
   double-quoted TOML string. See [Things to Watch Out For](#things-to-watch-out-for).
 - **"capture 'user_id': no value matched '$.id'"**: the response body does not contain that path. Run with
