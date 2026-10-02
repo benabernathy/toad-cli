@@ -216,3 +216,19 @@ line of a collection:
 
 Or save the schema for the toad you have installed with `toad --schema > toad.schema.json`. See
 [doc/schema.md](doc/schema.md) for using it offline, applying it to a whole folder, and checking collections in CI.
+
+## Contributing
+
+Feature requests and bug reports are welcome via [GitHub Issues](https://github.com/benabernathy/toad-cli/issues).
+Please open an issue to discuss a change before sending a pull request.
+
+CI runs these on every pull request and every push to `main`. Run them before pushing:
+
+```
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+`cargo test` runs on Linux, macOS, and Windows in CI. If you change a setting in `src/collection.rs`, regenerate the
+JSON Schema with `UPDATE_SCHEMA=1 cargo test schema` (see [src/schema.rs](src/schema.rs)).

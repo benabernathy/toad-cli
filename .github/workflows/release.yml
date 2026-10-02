@@ -6,8 +6,10 @@ on:
       - "v*"
 
 jobs:
-  check-schema:
-    name: Check schema is up to date
+  # CI runs on pull requests, but a tag can be pushed on any commit, so test again before building.
+  # This also fails if schema/toad.schema.json wasn't regenerated after a settings change.
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,13 +17,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Fails if schema/toad.schema.json wasn't regenerated after a settings change
-      - name: Test schema
-        run: cargo test schema
+      - name: Test
+        run: cargo test
 
   build:
     name: Build ${{ matrix.target }}
-    needs: check-schema
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
