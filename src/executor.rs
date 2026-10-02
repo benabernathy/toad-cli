@@ -19,14 +19,14 @@ pub fn execute_request(
     config: Config,
     ca_password: Option<&str>,
     output: &dyn OutputMode,
-) -> Result<()> {
-    let url = interpolate(&req.url, vars);
+) -> Result<Vec<(String, String)>> {
+    let url = interpolate(&req.url, vars)?;
     let method = req.method.to_uppercase();
 
     // build headers
     let mut header_map = HeaderMap::new();
     for (k, v) in &req.headers {
-        let v = interpolate(v, vars);
+        let v = interpolate(v, vars)?;
         header_map.insert(HeaderName::from_str(k)?, HeaderValue::from_str(&v)?);
     }
 
@@ -37,7 +37,7 @@ pub fn execute_request(
                 name
             ));
         }
-        let interpolated_auth = interpolate(raw_auth, vars);
+        let interpolated_auth = interpolate(raw_auth, vars)?;
         let auth_value = crate::auth::build_authorization_value(&interpolated_auth)
             .with_context(|| format!("invalid auth value in request '{name}'"))?;
         header_map.insert(
@@ -47,17 +47,17 @@ pub fn execute_request(
     }
 
     // build body
-    let body_bytes = if let Some(body) = &req.body {
-        let interpolated = interpolate(body, vars);
+    let body_bytes = if let Some(body) = req.resolved_body(vars) {
+        let body = body?;
 
         // validate it's real JSON
-        serde_json::from_str::<serde_json::Value>(&interpolated)
+        serde_json::from_str::<serde_json::Value>(&body)
             .with_context(|| format!("body in '{name} is not valid JSON"))?;
         header_map.insert(
             reqwest::header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        Some(interpolated.into_bytes())
+        Some(body.into_bytes())
     } else {
         None
     };
@@ -84,8 +84,8 @@ pub fn execute_request(
         let query: Vec<(String, String)> = req
             .query
             .iter()
-            .map(|(k, v)| (k.clone(), interpolate(v, vars)))
-            .collect();
+            .map(|(k, v)| Ok((k.clone(), interpolate(v, vars)?)))
+            .collect::<Result<_>>()?;
 
         let url = reqwest::Url::parse_with_params(&url, &query)
             .with_context(|| format!("could not build query params for '{name}'"))?;
@@ -108,6 +108,7 @@ pub fn execute_request(
     let elapsed = start.elapsed();
 
     let status = response.status();
+    let response_headers = response.headers().clone();
     let body_text = response.text().unwrap_or_default();
     let _response_body_length = format!("{}B", body_text.len());
 
@@ -125,5 +126,24 @@ pub fn execute_request(
         }
     }
 
-    Ok(())
+    let json = if req.captures.is_empty() {
+        None
+    } else {
+        serde_json::from_str::<serde_json::Value>(&body_text).ok()
+    };
+
+    let captured = req
+        .captures
+        .iter()
+        .map(|c| {
+            let value = c.extract(status, &response_headers, &body_text, json.as_ref())?;
+            Ok((c.name.clone(), value))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if !captured.is_empty() {
+        output.request_captured(name, &captured);
+    }
+
+    Ok(captured)
 }
