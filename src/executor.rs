@@ -1,27 +1,37 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
-use reqwest::blocking::Client;
+use reqwest::StatusCode;
+use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::ca::load_custom_ca_certificates;
 use crate::collection::{Config, RequestDef};
 use crate::interpolate::interpolate;
+use crate::retry::RetryPolicy;
 use crate::time_limit::TimeLimits;
 
 use crate::output::OutputMode;
+
+/// Settings that are the same for every request in a run.
+pub struct RunContext<'a> {
+    pub ca_password: Option<&'a str>,
+    pub time_limits: TimeLimits,
+    pub output: &'a dyn OutputMode,
+}
 
 pub fn execute_request(
     name: &str,
     req: &RequestDef,
     vars: &HashMap<String, String>,
     config: Config,
-    ca_password: Option<&str>,
-    time_limits: &TimeLimits,
-    output: &dyn OutputMode,
+    retry: &RetryPolicy,
+    ctx: &RunContext,
 ) -> Result<Vec<(String, String)>> {
+    let output = ctx.output;
     let url = interpolate(&req.url, vars)?;
     let method = req.method.to_uppercase();
 
@@ -69,7 +79,7 @@ pub fn execute_request(
         .danger_accept_invalid_certs(config.ignore_ssl);
 
     if let Some(ca_path) = &config.use_custom_ca {
-        let certs = load_custom_ca_certificates(ca_path, ca_password)
+        let certs = load_custom_ca_certificates(ca_path, ctx.ca_password)
             .with_context(|| format!("could not load custom CA for request '{name}'"))?;
         for cert in certs {
             client_builder = client_builder.add_root_certificate(cert);
@@ -103,22 +113,119 @@ pub fn execute_request(
 
     output.request_start(name, req, vars, &header_map, &url);
 
+    let attempts = retry.attempts();
+    let mut attempt = 1;
+    loop {
+        let request = builder
+            .try_clone()
+            .ok_or_else(|| anyhow!("request '{name}' could not be prepared for sending"))?;
+
+        let Attempt { received, outcome } =
+            send_and_check(name, req, &config, &ctx.time_limits, request);
+
+        match outcome {
+            Ok(captured) => {
+                if let Some(r) = &received {
+                    output.request_complete(name, r.status, r.elapsed, &r.body);
+                }
+                if !captured.is_empty() {
+                    output.request_captured(name, &captured);
+                }
+                return Ok(captured);
+            }
+            Err(err) if attempt < attempts => {
+                attempt += 1;
+                output.attempt_failed(
+                    name,
+                    received
+                        .as_ref()
+                        .map(|r| (r.status, r.elapsed, r.body.as_str())),
+                    &format!("{err:#}"),
+                    attempt,
+                    attempts,
+                    retry.delay_ms,
+                );
+                thread::sleep(Duration::from_millis(retry.delay_ms));
+            }
+            Err(err) => {
+                if let Some(r) = &received {
+                    output.request_complete(name, r.status, r.elapsed, &r.body);
+                }
+                if attempts > 1 {
+                    return Err(anyhow!("{err:#} (after {attempts} attempts)"));
+                }
+                return Err(err);
+            }
+        }
+    }
+}
+
+/// A response as it was received, before any checks.
+struct Received {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: String,
+    elapsed: Duration,
+}
+
+/// The result of one attempt. `received` is `None` when the request could not be sent.
+struct Attempt {
+    received: Option<Received>,
+    outcome: Result<Vec<(String, String)>>,
+}
+
+/// Sends one attempt and checks the response.
+fn send_and_check(
+    name: &str,
+    req: &RequestDef,
+    config: &Config,
+    time_limits: &TimeLimits,
+    request: RequestBuilder,
+) -> Attempt {
     let start = Instant::now();
-    let response = builder
+    let response = match request
         .send()
-        .with_context(|| format!("request '{name}' failed to send"))?;
+        .with_context(|| format!("request '{name}' failed to send"))
+    {
+        Ok(response) => response,
+        Err(e) => {
+            return Attempt {
+                received: None,
+                outcome: Err(e),
+            };
+        }
+    };
 
     let status = response.status();
-    let response_headers = response.headers().clone();
-    let body_text = response.text().unwrap_or_default();
+    let headers = response.headers().clone();
+    let body = response.text().unwrap_or_default();
     // Timed through the end of the body download, so slow or large bodies count
     let elapsed = start.elapsed();
-    let _response_body_length = format!("{}B", body_text.len());
 
-    output.request_complete(name, status, elapsed, &body_text);
+    let received = Received {
+        status,
+        headers,
+        body,
+        elapsed,
+    };
 
+    let outcome = check_response(name, req, config, time_limits, &received);
+    Attempt {
+        received: Some(received),
+        outcome,
+    }
+}
+
+/// Checks status, then time, then runs captures.
+fn check_response(
+    name: &str,
+    req: &RequestDef,
+    config: &Config,
+    time_limits: &TimeLimits,
+    received: &Received,
+) -> Result<Vec<(String, String)>> {
     if let Some(expected) = &req.expect_status {
-        let code = status.as_u16();
+        let code = received.status.as_u16();
         if !expected.contains(&code) {
             return Err(anyhow!(
                 "request '{}' expected status {:?} but got {}",
@@ -129,10 +236,10 @@ pub fn execute_request(
         }
     }
 
-    if let Some(max_ms) = req.max_ms(&config)
+    if let Some(max_ms) = req.max_ms(config)
         && let Some(limit) = time_limits.effective(max_ms)
     {
-        let took = elapsed.as_millis();
+        let took = received.elapsed.as_millis();
         if took > u128::from(limit) {
             return Err(anyhow!(
                 "request '{}' took {}ms, expected at most {}",
@@ -146,21 +253,19 @@ pub fn execute_request(
     let json = if req.captures.is_empty() {
         None
     } else {
-        serde_json::from_str::<serde_json::Value>(&body_text).ok()
+        serde_json::from_str::<serde_json::Value>(&received.body).ok()
     };
 
-    let captured = req
-        .captures
+    req.captures
         .iter()
         .map(|c| {
-            let value = c.extract(status, &response_headers, &body_text, json.as_ref())?;
+            let value = c.extract(
+                received.status,
+                &received.headers,
+                &received.body,
+                json.as_ref(),
+            )?;
             Ok((c.name.clone(), value))
         })
-        .collect::<Result<Vec<_>>>()?;
-
-    if !captured.is_empty() {
-        output.request_captured(name, &captured);
-    }
-
-    Ok(captured)
+        .collect()
 }

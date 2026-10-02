@@ -38,6 +38,12 @@ pub struct Config {
 
     #[serde(default)]
     pub expect_max_ms: Option<u64>,
+
+    #[serde(default)]
+    pub retry: Option<u32>,
+
+    #[serde(default)]
+    pub retry_delay_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -67,6 +73,10 @@ pub struct RequestDef {
     pub expect_status: Option<Vec<u16>>,
 
     pub expect_max_ms: Option<u64>,
+
+    pub retry: Option<u32>,
+
+    pub retry_delay_ms: Option<u64>,
 
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
@@ -100,7 +110,14 @@ impl RequestDef {
     }
 }
 
-const CONFIG_KEYS: [&str; 4] = ["auth", "use_custom_ca", "ignore_ssl", "expect_max_ms"];
+const CONFIG_KEYS: [&str; 6] = [
+    "auth",
+    "use_custom_ca",
+    "ignore_ssl",
+    "expect_max_ms",
+    "retry",
+    "retry_delay_ms",
+];
 
 impl Config {
     /// Returns a copy of this config with the listed keys reset to their defaults.
@@ -112,6 +129,8 @@ impl Config {
                 "use_custom_ca" => config.use_custom_ca = None,
                 "ignore_ssl" => config.ignore_ssl = false,
                 "expect_max_ms" => config.expect_max_ms = None,
+                "retry" => config.retry = None,
+                "retry_delay_ms" => config.retry_delay_ms = None,
                 _ => {}
             }
         }
@@ -278,15 +297,21 @@ mod tests {
             use_custom_ca: Some("ca.pem".to_string()),
             auth: Some("bearer {{token}}".to_string()),
             expect_max_ms: Some(500),
+            retry: Some(3),
+            retry_delay_ms: Some(250),
         };
         let config = config.without(&[
             "auth".to_string(),
             "ignore_ssl".to_string(),
             "expect_max_ms".to_string(),
+            "retry".to_string(),
+            "retry_delay_ms".to_string(),
         ]);
         assert_eq!(config.auth, None);
         assert!(!config.ignore_ssl);
         assert_eq!(config.expect_max_ms, None);
+        assert_eq!(config.retry, None);
+        assert_eq!(config.retry_delay_ms, None);
         assert_eq!(config.use_custom_ca.as_deref(), Some("ca.pem"));
     }
 

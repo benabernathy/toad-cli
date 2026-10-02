@@ -149,6 +149,25 @@ To relax every limit at once in a slower environment, use `--time-scale 2` or `T
 if both are set), or `off` to skip time limits. See [doc/response_time.md](doc/response_time.md) for what is timed,
 warnings, and troubleshooting.
 
+### Retry on Failure
+
+Retry failed requests with `retry`, per request or as a `[config]` default:
+
+```toml
+[config]
+retry = 3              # up to 3 more attempts
+retry_delay_ms = 1000  # wait between attempts (default 1000)
+
+[create-order]
+method = "POST"
+url = "{{base_url}}/orders"
+retry = 0              # don't send this one twice
+```
+
+Connection errors, `expect_status`, `expect_max_ms`, and capture failures are retried. `--retry <N|off>` or
+`TOAD_RETRY` changes retries for a run without editing the file. See [doc/retry.md](doc/retry.md), including the
+section on requests that change data.
+
 ### Custom CA
 
 If a server presents a certificate signed by a CA that isn't in your system's trust

@@ -366,6 +366,8 @@ ignore_config = ["auth"]
 | `use_custom_ca` | The system trust store is used                                             |
 | `ignore_ssl`    | Certificates are verified                                                  |
 | `expect_max_ms` | No time limit, unless the request sets its own `expect_max_ms`             |
+| `retry`         | No retries, unless the request sets its own `retry`                        |
+| `retry_delay_ms`| The default delay of 1000ms, unless the request sets its own               |
 
 An ignored setting is not used at all, so any `{{variables}}` in it are not resolved and cannot cause an undefined
 variable error. An unknown key in `ignore_config` is an error when the file is loaded.
@@ -509,7 +511,7 @@ Other output modes do not print captured values. Verbose output already prints r
 - **"capture 'location': response has no 'Location' header"**: the header is missing from the response.
 - **"invalid capture 'user_id' in request 'create-user'"**: the capture source is not a valid JSONPath query and
   is not one of `header:<Name>`, `status`, or `body`. This is reported before any request is sent.
-- **"unknown key 'auht' in ignore_config"**: valid keys are `auth`, `use_custom_ca`, `ignore_ssl`, and `expect_max_ms`.
+- **"unknown key 'auht' in ignore_config"**: valid keys are `auth`, `use_custom_ca`, `ignore_ssl`, `expect_max_ms`, `retry`, and `retry_delay_ms`.
 
 ## Implementation Notes
 
@@ -535,7 +537,8 @@ This section is for contributors.
 - Each request's effective `Config` is built in `main` with `Config::without(&req.ignore_config)`.
   `--use-custom-ca` is applied after that, so it cannot be ignored.
 - `OutputMode::request_captured` has an empty default. Only `VerboseOutput` implements it.
-- When `retry` is added, captures run only on the final attempt. A response that fails `expect_max_ms` is not
-  captured from (see [doc/response_time.md](response_time.md#order-of-checks)).
-- `tests/capture.rs` runs the `toad` binary against a local `tiny_http` server. Its `/echo` route returns the
+- Captures run as part of each attempt's checks, so a failed capture is retried when `retry` is set (see
+  [doc/retry.md](retry.md)). Only the successful attempt's values are kept. A response that fails `expect_max_ms`
+  is not captured from (see [doc/response_time.md](response_time.md#order-of-checks)).
+- `tests/capture.rs` runs the `toad` binary against a local `tiny_http` server (in `tests/common`). Its `/echo` route returns the
   request body, which the escape and `interpolate_body` tests use to check exactly what was sent.

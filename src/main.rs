@@ -14,7 +14,7 @@ use collection::{
 };
 
 mod executor;
-use executor::execute_request;
+use executor::{RunContext, execute_request};
 
 mod output;
 use crate::{
@@ -35,6 +35,9 @@ mod capture;
 
 mod time_limit;
 use time_limit::TimeLimits;
+
+mod retry;
+use retry::{RetryPolicy, RetrySetting};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -109,6 +112,9 @@ fn main() -> Result<()> {
         eprintln!("{}", warning);
     }
 
+    let retry_setting =
+        RetrySetting::resolve(cli.retry, std::env::var("TOAD_RETRY").ok().as_deref());
+
     // Maybe merge vars from a profile
     if let Some(profile_name) = &cli.profile {
         if let Some(profile_vars) = rf.profiles.get(profile_name) {
@@ -119,6 +125,12 @@ fn main() -> Result<()> {
         }
     }
 
+    let ctx = RunContext {
+        ca_password: ca_password.as_deref(),
+        time_limits,
+        output: output.as_ref(),
+    };
+
     // Captured values are added to this as requests run
     let mut vars = rf.vars.clone();
 
@@ -128,16 +140,9 @@ fn main() -> Result<()> {
         if let Some(ca_path) = &cli.use_custom_ca {
             config.use_custom_ca = Some(ca_path.to_string_lossy().to_string());
         }
+        let retry = RetryPolicy::for_request(req, &config, retry_setting);
 
-        let result = execute_request(
-            name,
-            req,
-            &vars,
-            config,
-            ca_password.as_deref(),
-            &time_limits,
-            output.as_ref(),
-        );
+        let result = execute_request(name, req, &vars, config, &retry, &ctx);
         match result {
             Ok(captured) => vars.extend(captured),
             Err(e) => {

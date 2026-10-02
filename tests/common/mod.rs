@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -11,6 +12,9 @@ use tiny_http::{Header, Response, Server};
 
 /// Starts a fake API on a random port and returns its base URL.
 ///
+/// - `GET /flaky/<mode>/<key>/<n>` misbehaves for the first `n` requests to `<key>`, then
+///   returns `{"id": 7}`. `mode` is `status` (503), `slow` (waits 300ms), or `empty` (200 with
+///   `{}`). Each test should use its own `<key>`.
 /// - `GET /slow` waits 300ms, then returns `{"id": 1}`
 /// - `GET /slow-body` sends headers and part of the body right away, and the rest 300ms later
 /// - `POST /echo` returns the request body unchanged
@@ -22,6 +26,8 @@ pub fn start_server() -> String {
     let port = server.server_addr().to_ip().unwrap().port();
 
     thread::spawn(move || {
+        let mut flaky_counts: HashMap<String, u32> = HashMap::new();
+
         for mut request in server.incoming_requests() {
             let auth = request
                 .headers()
@@ -30,6 +36,29 @@ pub fn start_server() -> String {
                 .map(|h| h.value.to_string());
             let authorized = auth.as_deref() == Some("Bearer tok-123");
             let method = request.method().to_string();
+
+            if let Some(rest) = request.url().strip_prefix("/flaky/") {
+                let parts: Vec<&str> = rest.split('/').collect();
+                let (mode, key, n) = (parts[0], parts[1], parts[2].parse::<u32>().unwrap());
+                let count = flaky_counts.entry(key.to_string()).or_insert(0);
+                *count += 1;
+
+                let response = if *count > n {
+                    Response::from_string(r#"{"id": 7}"#)
+                } else {
+                    match mode {
+                        "status" => Response::from_string(r#"{"error": "unavailable"}"#)
+                            .with_status_code(503),
+                        "slow" => {
+                            thread::sleep(Duration::from_millis(300));
+                            Response::from_string(r#"{"id": 7}"#)
+                        }
+                        _ => Response::from_string("{}"),
+                    }
+                };
+                let _ = request.respond(response);
+                continue;
+            }
 
             if request.url() == "/slow" {
                 thread::sleep(Duration::from_millis(300));
@@ -99,7 +128,8 @@ pub fn toad_with_env(args: &[&str], env: &[(&str, &str)]) -> Output {
         .args(args)
         .env_remove("TOAD_OUTPUT")
         .env_remove("TOAD_TIME_SCALE")
-        .env_remove("TOAD_CA_PASSWORD");
+        .env_remove("TOAD_CA_PASSWORD")
+        .env_remove("TOAD_RETRY");
     for (k, v) in env {
         command.env(k, v);
     }

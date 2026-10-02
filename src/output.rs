@@ -16,6 +16,18 @@ pub trait OutputMode {
     }
     fn request_complete(&self, _name: &str, _status: StatusCode, _elapsed: Duration, _body: &str) {}
     fn request_captured(&self, _name: &str, _captured: &[(String, String)]) {}
+    /// Called instead of `request_complete` when an attempt failed and will be retried.
+    /// `response` is `None` when the request could not be sent.
+    fn attempt_failed(
+        &self,
+        _name: &str,
+        _response: Option<(StatusCode, Duration, &str)>,
+        _err: &str,
+        _next_attempt: u32,
+        _attempts: u32,
+        _delay_ms: u64,
+    ) {
+    }
     fn request_error(&self, _name: &str, _err: &str) {}
 }
 
@@ -37,6 +49,21 @@ impl OutputMode for NormalOutput {
 
         println!("[{}] {} ({:.0?})", name, status_colored, elapsed);
         println!("{}", try_pretty_json(body));
+    }
+
+    fn attempt_failed(
+        &self,
+        name: &str,
+        response: Option<(StatusCode, Duration, &str)>,
+        err: &str,
+        next_attempt: u32,
+        attempts: u32,
+        delay_ms: u64,
+    ) {
+        if let Some((status, elapsed, body)) = response {
+            self.request_complete(name, status, elapsed, body);
+        }
+        print_retrying(name, err, next_attempt, attempts, delay_ms);
     }
 
     fn request_error(&self, name: &str, err: &str) {
@@ -61,6 +88,21 @@ impl OutputMode for QuietOutput {
         let status_colored = colorize_response_code(status);
 
         println!("[{}] {} ({:.0?})", name, status_colored, elapsed);
+    }
+
+    fn attempt_failed(
+        &self,
+        name: &str,
+        response: Option<(StatusCode, Duration, &str)>,
+        err: &str,
+        next_attempt: u32,
+        attempts: u32,
+        delay_ms: u64,
+    ) {
+        if let Some((status, elapsed, body)) = response {
+            self.request_complete(name, status, elapsed, body);
+        }
+        print_retrying(name, err, next_attempt, attempts, delay_ms);
     }
 
     fn request_error(&self, name: &str, err: &str) {
@@ -141,6 +183,21 @@ impl OutputMode for VerboseOutput {
         }
     }
 
+    fn attempt_failed(
+        &self,
+        name: &str,
+        response: Option<(StatusCode, Duration, &str)>,
+        err: &str,
+        next_attempt: u32,
+        attempts: u32,
+        delay_ms: u64,
+    ) {
+        if let Some((status, elapsed, body)) = response {
+            self.request_complete(name, status, elapsed, body);
+        }
+        print_retrying(name, err, next_attempt, attempts, delay_ms);
+    }
+
     fn request_error(&self, name: &str, err: &str) {
         println!("{} -> {}", name, err)
     }
@@ -186,6 +243,18 @@ impl OutputMode for RequestOnlyOutput {
     fn request_complete(&self, _name: &str, _status: StatusCode, _elapsed: Duration, _body: &str) {}
 
     fn request_error(&self, _name: &str, _err: &str) {}
+}
+
+fn print_retrying(name: &str, err: &str, next_attempt: u32, attempts: u32, delay_ms: u64) {
+    println!(
+        "{} {}",
+        format!(
+            "retrying '{}' in {}ms (attempt {} of {}):",
+            name, delay_ms, next_attempt, attempts
+        )
+        .yellow(),
+        err
+    );
 }
 
 fn colorize_response_code(status: StatusCode) -> ColoredString {

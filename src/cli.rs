@@ -1,6 +1,7 @@
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
+use crate::retry::RetrySetting;
 use crate::time_limit::TimeScale;
 
 #[derive(Parser)]
@@ -46,6 +47,12 @@ pub struct Cli {
     /// Falls back to the TOAD_TIME_SCALE environment variable if unset.
     #[arg(long, value_name = "FACTOR|off")]
     pub time_scale: Option<TimeScale>,
+
+    /// Retry failed requests this many times, replacing any [config] retry (a request's own
+    /// retry still wins), or 'off' to never retry. Falls back to the TOAD_RETRY environment
+    /// variable if unset.
+    #[arg(long, value_name = "N|off")]
+    pub retry: Option<RetrySetting>,
 }
 
 #[derive(ValueEnum, Clone, Default, PartialEq)]
