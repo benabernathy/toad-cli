@@ -9,7 +9,8 @@ mod interpolate;
 
 mod collection;
 use collection::{
-    RequestFile, load_requests, parse_captures, resolve_custom_ca, validate_ignore_config,
+    RequestFile, load_requests, parse_captures, resolve_custom_ca, time_limit_warnings,
+    validate_expect_max_ms, validate_ignore_config,
 };
 
 mod executor;
@@ -32,6 +33,9 @@ mod auth;
 
 mod capture;
 
+mod time_limit;
+use time_limit::TimeLimits;
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -48,7 +52,7 @@ fn main() -> Result<()> {
         Ok("quiet") => OutputFormat::Quiet,
         Ok("silent") => OutputFormat::Silent,
         Ok("verbose") => OutputFormat::Verbose,
-        Ok("response-Only") => OutputFormat::ResponseOnly,
+        Ok("response-only") => OutputFormat::ResponseOnly,
         Ok("request-only") => OutputFormat::RequestOnly,
         Ok(unknown) => {
             eprintln!("unknown TOAD_OUTPUT value: '{}', using normal", unknown);
@@ -80,6 +84,7 @@ fn main() -> Result<()> {
     load_ext_body(&mut rf, file)?;
     parse_captures(&mut rf)?;
     validate_ignore_config(&rf)?;
+    validate_expect_max_ms(&rf)?;
     resolve_custom_ca(&mut rf.config, file);
 
     let ca_password = cli
@@ -94,6 +99,14 @@ fn main() -> Result<()> {
             println!("\t{}", name);
         }
         return Ok(());
+    }
+
+    let time_limits = TimeLimits::resolve(
+        cli.time_scale,
+        std::env::var("TOAD_TIME_SCALE").ok().as_deref(),
+    );
+    for warning in time_limit_warnings(&requests, &rf.config, &time_limits) {
+        eprintln!("{}", warning);
     }
 
     // Maybe merge vars from a profile
@@ -122,6 +135,7 @@ fn main() -> Result<()> {
             &vars,
             config,
             ca_password.as_deref(),
+            &time_limits,
             output.as_ref(),
         );
         match result {

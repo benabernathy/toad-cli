@@ -18,7 +18,7 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ## v0.4.0 — Integration Testing
 - [✅] Variable capture — extract values from a response and use them in subsequent requests (e.g. capture `id` from `POST /users` and use it in `GET /users/{{id}}`) [documentation](doc/variable_capture.md)
-- [ ] Response time assertions — `expect_max_ms = 500`
+- [✅] Response time assertions — `expect_max_ms = 500` [documentation](doc/response_time.md)
 - [ ] Retry on failure — `retry = 3` in settings, useful for flaky integration environments
 
 ---

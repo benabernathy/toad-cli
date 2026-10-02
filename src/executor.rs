@@ -9,6 +9,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use crate::ca::load_custom_ca_certificates;
 use crate::collection::{Config, RequestDef};
 use crate::interpolate::interpolate;
+use crate::time_limit::TimeLimits;
 
 use crate::output::OutputMode;
 
@@ -18,6 +19,7 @@ pub fn execute_request(
     vars: &HashMap<String, String>,
     config: Config,
     ca_password: Option<&str>,
+    time_limits: &TimeLimits,
     output: &dyn OutputMode,
 ) -> Result<Vec<(String, String)>> {
     let url = interpolate(&req.url, vars)?;
@@ -105,11 +107,12 @@ pub fn execute_request(
     let response = builder
         .send()
         .with_context(|| format!("request '{name}' failed to send"))?;
-    let elapsed = start.elapsed();
 
     let status = response.status();
     let response_headers = response.headers().clone();
     let body_text = response.text().unwrap_or_default();
+    // Timed through the end of the body download, so slow or large bodies count
+    let elapsed = start.elapsed();
     let _response_body_length = format!("{}B", body_text.len());
 
     output.request_complete(name, status, elapsed, &body_text);
@@ -122,6 +125,20 @@ pub fn execute_request(
                 name,
                 expected,
                 code
+            ));
+        }
+    }
+
+    if let Some(max_ms) = req.max_ms(&config)
+        && let Some(limit) = time_limits.effective(max_ms)
+    {
+        let took = elapsed.as_millis();
+        if took > u128::from(limit) {
+            return Err(anyhow!(
+                "request '{}' took {}ms, expected at most {}",
+                name,
+                took,
+                time_limits.describe(max_ms)
             ));
         }
     }
