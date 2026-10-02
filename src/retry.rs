@@ -94,7 +94,7 @@ mod tests {
     use crate::collection::RequestFile;
 
     fn policy(toml_str: &str, request: &str, setting: Option<RetrySetting>) -> RetryPolicy {
-        let rf: RequestFile = toml::from_str(toml_str).unwrap();
+        let rf = RequestFile::parse(toml_str).unwrap();
         let req = &rf.requests[request];
         RetryPolicy::for_request(req, &rf.config.without(&req.ignore_config), setting)
     }

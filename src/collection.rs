@@ -10,22 +10,94 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct RequestFile {
-    #[serde(default)]
     pub config: Config,
-
-    #[serde(default)]
     pub vars: HashMap<String, String>,
-
-    #[serde(default)]
     pub profiles: HashMap<String, HashMap<String, String>>,
-
-    #[serde(flatten)]
     pub requests: IndexMap<String, RequestDef>,
 }
 
+/// The collection file as written. Requests are kept as raw tables so each one can be checked
+/// on its own, and an error can name the request it came from.
+#[derive(Deserialize)]
+struct RawRequestFile {
+    #[serde(default)]
+    config: Config,
+
+    #[serde(default)]
+    vars: HashMap<String, String>,
+
+    #[serde(default)]
+    profiles: HashMap<String, HashMap<String, String>>,
+
+    #[serde(flatten)]
+    requests: IndexMap<String, toml::Value>,
+}
+
+/// If `name` looks like a misspelling of one of the special tables, returns that table's name.
+fn misspelled_section(name: &str) -> Option<&'static str> {
+    ["config", "vars", "profiles"]
+        .into_iter()
+        .find(|section| edit_distance(&name.to_lowercase(), section) <= 2)
+}
+
+/// Levenshtein distance between two strings.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+impl RequestFile {
+    /// Parses a collection file. Unknown settings are an error, so a misspelled check can't be
+    /// skipped without anyone noticing.
+    pub fn parse(content: &str) -> Result<RequestFile> {
+        let raw: RawRequestFile = toml::from_str(content)?;
+
+        let mut requests = IndexMap::with_capacity(raw.requests.len());
+        for (name, value) in raw.requests {
+            if !value.is_table() {
+                return Err(anyhow!(
+                    "'{}' is not a request - every top-level table is a request, and settings for \
+                     every request go in [config]",
+                    name
+                ));
+            }
+            let request: RequestDef =
+                value
+                    .try_into()
+                    .map_err(|e: toml::de::Error| match misspelled_section(&name) {
+                        Some(section) => anyhow!(
+                            "request '{}': {} (did you mean [{}]?)",
+                            name,
+                            e.message(),
+                            section
+                        ),
+                        None => anyhow!("request '{}': {}", name, e.message()),
+                    })?;
+            requests.insert(name, request);
+        }
+
+        Ok(RequestFile {
+            config: raw.config,
+            vars: raw.vars,
+            profiles: raw.profiles,
+            requests,
+        })
+    }
+}
+
 #[derive(Debug, Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
     pub ignore_ssl: bool,
@@ -47,6 +119,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RequestDef {
     #[serde(default = "default_method")]
     pub method: String,
@@ -287,7 +360,104 @@ mod tests {
     use super::*;
 
     fn parse(toml_str: &str) -> RequestFile {
-        toml::from_str(toml_str).unwrap()
+        RequestFile::parse(toml_str).unwrap()
+    }
+
+    #[test]
+    fn unknown_request_key_names_the_request() {
+        let err = RequestFile::parse(
+            r#"
+            [get-user]
+            url = "http://x"
+            expect_stauts = [200]
+            "#,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("request 'get-user': unknown field `expect_stauts`"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn unknown_request_subtable_is_an_error() {
+        let err = RequestFile::parse(
+            r#"
+            [get-user]
+            url = "http://x"
+
+            [get-user.headres]
+            X-Test = "1"
+            "#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `headres`"));
+    }
+
+    #[test]
+    fn description_is_not_a_setting() {
+        let err = RequestFile::parse(
+            r#"
+            [get-user]
+            url = "http://x"
+            description = "Fetch a user"
+            "#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `description`"));
+    }
+
+    #[test]
+    fn unknown_config_key_is_an_error() {
+        let err = RequestFile::parse(
+            r#"
+            [config]
+            retyr = 3
+            "#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `retyr`"));
+    }
+
+    #[test]
+    fn top_level_setting_is_an_error() {
+        let err = RequestFile::parse(
+            r#"
+            retry = 3
+
+            [get-user]
+            url = "http://x"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("settings for every request go in [config]")
+        );
+    }
+
+    #[test]
+    fn misspelled_config_table_gets_a_hint() {
+        let err = RequestFile::parse(
+            r#"
+            [confg]
+            retry = 3
+            "#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "request 'confg': missing field `url` (did you mean [config]?)"
+        );
+    }
+
+    #[test]
+    fn request_names_are_not_mistaken_for_sections() {
+        assert_eq!(misspelled_section("get-user"), None);
+        assert_eq!(misspelled_section("login"), None);
+        assert_eq!(misspelled_section("Vars"), Some("vars"));
+        assert_eq!(misspelled_section("profile"), Some("profiles"));
     }
 
     #[test]

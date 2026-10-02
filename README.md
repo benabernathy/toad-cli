@@ -34,7 +34,7 @@ body = """
 """
 
 [get-user]
-description = "Fetch a user"
+# Fetch a user
 method = "GET"
 url = "{{base_url}}/users/1"
 expect_status = [200]
@@ -48,7 +48,7 @@ userId = "1"
 _limit = "3"
 
 [not-found]
-description = "Born to fail"
+# Born to fail
 method = "GET"
 url = "{{base_url}}/users/999999"
 expect_status = [404]

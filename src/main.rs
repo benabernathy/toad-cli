@@ -81,8 +81,8 @@ fn main() -> Result<()> {
     let content =
         fs::read_to_string(file).with_context(|| format!("could not read {}", file.display()))?;
 
-    let mut rf: RequestFile =
-        toml::from_str(&content).with_context(|| format!("could not parse {}", file.display()))?;
+    let mut rf: RequestFile = RequestFile::parse(&content)
+        .with_context(|| format!("could not parse {}", file.display()))?;
 
     load_ext_body(&mut rf, file)?;
     parse_captures(&mut rf)?;

@@ -13,13 +13,13 @@ url = "{{base_url}}/posts"
 body_file = "./create-post-body.json"
 
 [get-user]
-description = "Fetch a user"
+# Fetch a user
 method = "GET"
 url = "{{base_url}}/users/1"
 expect_status = [200]
 
 [not-found]
-description = "Born to fail"
+# Born to fail
 method = "GET"
 url = "{{base_url}}/users/999999"
 expect_status = [404]
