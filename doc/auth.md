@@ -67,6 +67,20 @@ auth = "basic {{admin_user}}:{{admin_pass}}"
 
 A request's own `auth` always wins over `[config] auth`.
 
+## Sending a Request Without the Default
+
+To send one request with no `Authorization` header at all, ignore the `[config]` default:
+
+```toml
+[login]
+method = "POST"
+url = "{{base_url}}/auth/login"
+ignore_config = ["auth"]
+```
+
+This is needed when the default uses a token that a login request captures, since the login request runs before
+the token exists. See [doc/variable_capture.md](variable_capture.md#log-in-and-use-the-token) for a full example.
+
 ## Avoid Setting Both `auth` and a Manual Header
 
 Don't set `auth` on a request that also sets an `Authorization` header directly (in `[headers]`, or
