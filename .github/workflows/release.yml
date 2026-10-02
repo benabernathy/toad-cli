@@ -6,8 +6,22 @@ on:
       - "v*"
 
 jobs:
+  check-schema:
+    name: Check schema is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Fails if schema/toad.schema.json wasn't regenerated after a settings change
+      - name: Test schema
+        run: cargo test schema
+
   build:
     name: Build ${{ matrix.target }}
+    needs: check-schema
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
