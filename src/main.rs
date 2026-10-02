@@ -34,15 +34,22 @@ mod auth;
 mod capture;
 
 mod time_limit;
+use time_limit::TimeLimits;
 
 mod variables;
-use time_limit::TimeLimits;
+
+mod schema;
 
 mod retry;
 use retry::{RetryPolicy, RetrySetting};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if cli.schema {
+        print!("{}", schema::SCHEMA);
+        return Ok(());
+    }
 
     if let Some(port) = cli.listen {
         return serve::run(port, cli.output_file);

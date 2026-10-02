@@ -216,3 +216,17 @@ it with `--use-custom-ca-password` or the `TOAD_CA_PASSWORD` environment variabl
 (the flag wins if both are set). PEM files don't need a password.
 
 See [doc/custom_ca.md](doc/custom_ca.md) for more detail, including troubleshooting.
+
+### Editor Support
+
+Toad has a JSON Schema for collection files. With the
+[Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension in VS Code,
+it gives autocomplete, a description for each setting, and underlines on misspelled settings. Add this as the first
+line of a collection:
+
+```toml
+#:schema https://raw.githubusercontent.com/benabernathy/toad-cli/v0.5.0/schema/toad.schema.json
+```
+
+Or save the schema for the toad you have installed with `toad --schema > toad.schema.json`. See
+[doc/schema.md](doc/schema.md) for using it offline, applying it to a whole folder, and checking collections in CI.
