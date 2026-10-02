@@ -10,6 +10,7 @@ The application return code will always return a 0 if no errors where encountere
 | Normal (default) | `normal`        | Normal verbosity, will show return code and body, but not return headers    |
 | Quiet            | `quiet`         | Only outputs the request name, return code, and elapsed time                |
 | Silent           | `silent`        | No standard output, uses application return code to signal success or error |
+| Verbose          | `verbose`       | Also prints each request before it is sent: method, URL, query, headers, and body |
 | Request Only     | `request-only`  | Only outputs the resolved/expaned resolved request body, if present         |
 | Response Only    | `response-only` | Only outputs the response, if returned                                      |
 

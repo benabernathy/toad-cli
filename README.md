@@ -16,6 +16,9 @@ to the frustations I experienced with Postman and Jetclient. As I was thinking a
 
 ## Quick Start
 
+New to toad? The [Getting Started tutorial](doc/getting_started.md) walks through building a collection step by
+step. All the guides are listed in [doc/README.md](doc/README.md).
+
 It's pretty simple, you create a toml file that defines your operations and then you give the file to toad.
 
 You can do some cool stuff like this:
@@ -34,7 +37,7 @@ body = """
 """
 
 [get-user]
-description = "Fetch a user"
+# Fetch a user
 method = "GET"
 url = "{{base_url}}/users/1"
 expect_status = [200]
@@ -48,7 +51,7 @@ userId = "1"
 _limit = "3"
 
 [not-found]
-description = "Born to fail"
+# Born to fail
 method = "GET"
 url = "{{base_url}}/users/999999"
 expect_status = [404]
@@ -58,11 +61,11 @@ expect_status = [404]
 
 - You can also tell toad to run a single operation: `toad test.toml get-posts`. 
 
-- You can also tell toad to quiet its outputs: `toad test.toml -q`. It'll only output the operation name, code, and elapsed time.
+- You can also tell toad to quiet its outputs: `toad test.toml -o quiet`. It'll only output the operation name, code, and elapsed time.
 
-- You can also tell toad to be really quiet (aka silent): `toad test.toml -Q`. Toad will only use the return code and produce no stdout. Just a 0 if all's swell or 1 otherwise.
+- You can also tell toad to be really quiet (aka silent): `toad test.toml -o silent`. Toad will only use the return code and produce no stdout. Just a 0 if all's swell or 1 otherwise.
 
-- Finally, you can tell toad to shout it's output: `toad test.toml -v`. Toad will show you the resolved URL, body, and response. 
+- Finally, you can tell toad to shout it's output: `toad test.toml -o verbose`. Toad will show you the resolved URL, headers, body, and response. See [doc/output_format.md](doc/output_format.md) for all the output modes.
 
 ### Usage 
 
@@ -76,7 +79,7 @@ method = "GET"
 url = "{{base_url}}/posts"
 ```
 
-2. Run toad with the -o for "output only" and redirect the output to a file: `toad test.toml get-posts -o > get-posts.json`
+2. Run toad with `-o response-only` and redirect the output to a file: `toad test.toml get-posts -o response-only > get-posts.json`
 
 ### Listen Mode
 
