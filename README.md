@@ -135,6 +135,24 @@ that uses an undefined `{{variable}}` fails instead of sending the literal text.
 `\{{` or set `interpolate_body = false` on the request. See
 [doc/variable_capture.md](doc/variable_capture.md) for examples, including logging in and reusing a token.
 
+### Environment Variables
+
+Read a value from the environment with `{{env:NAME}}`, so tokens don't have to live in the collection file:
+
+```toml
+[vars]
+token = "{{env:API_TOKEN}}"
+
+[create-post]
+method = "POST"
+url = "{{base_url}}/posts"
+auth = "bearer {{token}}"
+```
+
+If `API_TOKEN` isn't set, toad stops before sending anything. Only requests that run need their variables, so
+`toad api.toml list-posts` works without a token. The same check reports an undefined `{{variable}}` before the run
+starts. See [doc/env_vars.md](doc/env_vars.md), including using secrets in GitHub Actions.
+
 ### Response Time Assertions
 
 Fail a request that takes too long with `expect_max_ms`, per request or as a `[config]` default:

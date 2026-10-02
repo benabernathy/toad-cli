@@ -25,7 +25,7 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ## v0.5.0 — Debugging Support
 
-- [ ] Environment variables in collections — `token = "{{env:API_TOKEN}}"` reads a value from the environment and fails clearly if it isn't set, so the same collection runs locally and in CI without keeping secrets in the file [issue](https://github.com/benabernathy/toad-cli/issues/17)
+- [ ] Environment variables in collections — `token = "{{env:API_TOKEN}}"` reads a value from the environment and fails clearly if it isn't set, so the same collection runs locally and in CI without keeping secrets in the file [documentation](doc/env_vars.md) / [issue](https://github.com/benabernathy/toad-cli/issues/17)
 - [ ] "Step" through request - `--step` or `-s` on the command line will cause toad to stop before each request and wait for the user to `s` to step to the next request, `c` to continue to the next breakpoint, `r` to run to the end ignoring breakpoints, or `q` to quit [issue](https://github.com/benabernathy/toad-cli/issues/18)
 - [ ] Override request execution order by providing a specific list in the collections file. [issue](https://github.com/benabernathy/toad-cli/issues/19)
 - [ ] Breakpoints - `--break <request>` or `-b` on the command line stops before that request and puts toad into step mode. Breakpoints are never saved in the collection file [issue](https://github.com/benabernathy/toad-cli/issues/20)
