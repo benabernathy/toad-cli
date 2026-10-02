@@ -16,6 +16,7 @@ from a single request up to a CI smoke test.
 | [Variable Capture](variable_capture.md)    | Capturing values from a response with JSONPath, headers, or status, using them in later requests, and sending literal `{{...}}` text |
 | [Response Time Assertions](response_time.md) | Failing slow requests with `expect_max_ms`, and scaling limits with `--time-scale` |
 | [Retry on Failure](retry.md)               | Retrying failed requests with `retry`, and what counts as a failure             |
+| [JSON Schema](schema.md)                   | Autocomplete and misspelled-setting warnings in VS Code and other editors       |
 
 ## Command Line Options
 
@@ -30,6 +31,7 @@ from a single request up to a CI smoke test.
 | `--use-custom-ca-password <PW>` | `TOAD_CA_PASSWORD`   | [Custom CA](custom_ca.md)                |
 | `--time-scale <FACTOR\|off>`    | `TOAD_TIME_SCALE`    | [Response Time Assertions](response_time.md) |
 | `--retry <N\|off>`              | `TOAD_RETRY`         | [Retry on Failure](retry.md)             |
+| `--schema`                      |                      | [JSON Schema](schema.md)                 |
 | `-V, --version`                 |                      | Prints the version                       |
 
 When an option can be set both ways, the command line flag wins over the environment variable.
@@ -37,7 +39,8 @@ When an option can be set both ways, the command line flag wins over the environ
 ## Collection Settings by Guide
 
 Toad rejects any setting it doesn't recognize, in a request or in `[config]`, so a misspelled check fails loudly
-instead of being skipped. Use TOML `#` comments for notes.
+instead of being skipped. Use TOML `#` comments for notes. To see these mistakes in your editor before running
+anything, see [JSON Schema](schema.md).
 
 Settings in `[config]` apply to every request. A request can override them with its own value, or turn them off
 with `ignore_config` (see [Ignoring Config Settings](variable_capture.md#ignoring-config-settings)).

@@ -29,6 +29,11 @@ pub struct Cli {
     #[arg(long, conflicts_with = "file")]
     pub listen: Option<u16>,
 
+    /// Print the JSON Schema for collection files and exit. Editors use it for autocomplete
+    /// and to flag misspelled settings.
+    #[arg(long, conflicts_with_all = ["file", "listen"])]
+    pub schema: bool,
+
     /// Append captured request output to this file (only used with --listen)
     #[arg(long, requires = "listen")]
     pub output_file: Option<PathBuf>,
