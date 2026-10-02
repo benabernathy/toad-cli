@@ -75,6 +75,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # For schema/toad.schema.json. Checkout runs first so it can't clean out the artifacts.
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
@@ -87,6 +90,7 @@ jobs:
             toad-x86_64-apple-darwin/toad-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz
             toad-aarch64-apple-darwin/toad-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
             toad-x86_64-pc-windows-msvc/toad-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip
+            schema/toad.schema.json
           generate_release_notes: true
   publish-crate:
     name: Publish to crates.io
