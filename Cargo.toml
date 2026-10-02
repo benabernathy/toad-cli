@@ -11,6 +11,29 @@ readme = "README.md"
 name = "toad"
 path = "src/main.rs"
 
+# `cargo deb` and `cargo generate-rpm` build the Linux packages in the release workflow. With
+# --target, both read the binary from target/<target>/release instead of target/release.
+[package.metadata.deb]
+name = "toad"
+maintainer = "Benjamin Abernathy"
+section = "web"
+extended-description = """\
+Toad runs HTTP requests defined in a TOML collection file and checks the results. \
+It is meant for API smoke tests and integration tests, locally and in CI."""
+assets = [
+    ["target/release/toad", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/toad/README.md", "644"],
+    ["LICENSE", "usr/share/doc/toad/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "toad"
+assets = [
+    { source = "target/release/toad", dest = "/usr/bin/toad", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/toad/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/toad/LICENSE", mode = "644", doc = true },
+]
+
 [dependencies]
 anyhow = "1.0.102"
 base64 = "0.22"

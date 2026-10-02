@@ -11,7 +11,12 @@ to the frustations I experienced with Postman and Jetclient. As I was thinking a
 ## Installation
 - Mac OS (Homebrew) `brew tap benabernathy/toad && brew install toad`
 - Using cargo `cargo install toad-cli` 
-- Releases for most popular OSes and architectures can be downloaded from the [Releases](https://github.com/benabernathy/toad/releases) page.
+- Releases for most popular OSes and architectures can be downloaded from the [Releases](https://github.com/benabernathy/toad-cli/releases) page.
+- Debian 12+ and Ubuntu 22.04+: download the `.deb` for your architecture (`amd64` or `arm64`) from the
+  [Releases](https://github.com/benabernathy/toad-cli/releases) page, then
+  `sudo apt install ./toad_0.5.0-1_amd64.deb`. Remove it with `sudo apt remove toad`.
+- Fedora and RHEL 9+ (and Rocky or Alma Linux 9+): download the `.rpm` for your architecture (`x86_64` or
+  `aarch64`), then `sudo dnf install ./toad-0.5.0-1.x86_64.rpm`. Remove it with `sudo dnf remove toad`.
 - You may install it using cargo after cloning this repo, run `cargo install --path .` 
 
 ## Quick Start
