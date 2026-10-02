@@ -10,6 +10,9 @@
 //! The schema must never reject a file toad accepts. Many settings can contain `{{var}}`, so
 //! string settings only get a pattern when toad itself checks the value without interpolating it.
 
+/// The schema printed by `toad --schema`, so it always matches the installed version.
+pub const SCHEMA: &str = include_str!("../schema/toad.schema.json");
+
 #[cfg(test)]
 use crate::collection::{CONFIG_KEYS, Config, RequestDef};
 #[cfg(test)]
