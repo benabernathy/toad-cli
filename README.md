@@ -81,20 +81,6 @@ url = "{{base_url}}/posts"
 
 2. Run toad with `-o response-only` and redirect the output to a file: `toad test.toml get-posts -o response-only > get-posts.json`
 
-### Listen Mode
-
-Toad can also flip roles and act as a simple capture server: instead of running a collection file, it listens on a
-port and logs/records every inbound request it receives (URL with query params, headers, and body), always
-responding with `200 OK`. This is handy for inspecting what a webhook or client is actually sending.
-
-- Start listening on a port: `toad --listen 8080`. Every request is printed to stdout as it arrives.
-
-- Append captured requests to a file instead of printing them: `toad --listen 8080 --output-file requests.log`.
-  When `--output-file` is set, stdout only logs a short line (timestamp, method, URL) per request; the full
-  detail (headers + body) goes to the file.
-
-- `--listen` and a collection file are mutually exclusive — listen mode doesn't use a TOML file at all.
-
 ### Authentication
 
 Instead of hand-building an `Authorization` header, use the `auth` shorthand:
