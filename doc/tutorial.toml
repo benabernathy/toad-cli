@@ -11,9 +11,6 @@ base_url = "https://jsonplaceholder.typicode.com"
 user_id = "1"
 token = "tutorial-token"
 
-[profiles.listen]
-base_url = "http://localhost:8080"
-
 [get-post]
 url = "{{base_url}}/posts/11"
 expect_status = [200]

@@ -25,8 +25,6 @@ use crate::{
     },
 };
 
-mod serve;
-
 mod ca;
 
 mod auth;
@@ -51,14 +49,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if let Some(port) = cli.listen {
-        return serve::run(port, cli.output_file);
-    }
-
     let file = cli
         .file
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("a collection file is required unless --listen is used"))?;
+        .expect("clap requires a collection file unless --schema is used");
 
     let env_output_mode = match std::env::var("TOAD_OUTPUT").as_deref() {
         Ok("quiet") => OutputFormat::Quiet,

@@ -26,8 +26,6 @@ from a single request up to a CI smoke test.
 | `-o, --output <MODE>`           | `TOAD_OUTPUT`        | [Output Format](output_format.md)        |
 | `-l, --list-requests`           |                      | Lists the requests in the collection     |
 | `-p, --profile <NAME>`          |                      | Merges a `[profiles.<NAME>]` table into `[vars]` |
-| `--listen <PORT>`               |                      | [Main README](../README.md#listen-mode)  |
-| `--output-file <FILE>`          |                      | [Main README](../README.md#listen-mode)  |
 | `--use-custom-ca <FILE>`        |                      | [Custom CA](custom_ca.md)                |
 | `--use-custom-ca-password <PW>` | `TOAD_CA_PASSWORD`   | [Custom CA](custom_ca.md)                |
 | `--time-scale <FACTOR\|off>`    | `TOAD_TIME_SCALE`    | [Response Time Assertions](response_time.md) |

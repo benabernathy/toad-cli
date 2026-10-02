@@ -7,7 +7,7 @@ that reads data, sends data, chains requests together, checks response times, re
 It takes about 30 minutes. You need:
 
 - toad installed (see [Installation](../README.md#installation))
-- a terminal, and a second one for step 8
+- a terminal
 - an internet connection
 
 The finished collection is in [`tutorial.toml`](tutorial.toml) if you want to compare as you go. Your times and
@@ -268,72 +268,43 @@ expect_status = [201]
 This sends `Authorization: Bearer tutorial-token`. Use `auth = "basic {{user}}:{{pass}}"` for basic auth, and
 toad base64-encodes it for you.
 
-JSONPlaceholder ignores the header, so you can't see it working there. The next step shows how to check it.
+JSONPlaceholder ignores the header, so the response doesn't show it. The next step shows how to see it.
 
 To use the same credentials on every request, set `auth` once in a `[config]` table instead. See
 [Authentication](auth.md), including how to keep real credentials out of files you commit.
 
 ## 8. Seeing What Toad Sends
 
-Toad can also act as a server that prints every request it receives. That lets you see exactly what a request
-looks like on the wire.
-
-Add a profile to `tutorial.toml`. A profile is a named set of variables that replaces values in `[vars]` when you
-select it with `-p`:
-
-```toml
-[profiles.listen]
-base_url = "http://localhost:8080"
-```
-
-In a second terminal, start toad in listen mode:
+`-o verbose` prints each request before it's sent, including the headers. Use it to check what toad actually sends:
 
 ```bash
-toad --listen 8080
+toad tutorial.toml create-post -o verbose
 ```
 
-Back in the first terminal, send `create-post` to it:
-
-```bash
-toad tutorial.toml create-post -p listen
 ```
-
-The listening terminal prints the request:
-
-```
-listening on port 8080
-[2026-10-01T21:51:18.792302-06:00] POST /posts
-Headers:
+-- request -------------------------------
+POST https://jsonplaceholder.typicode.com/posts
+headers
   x-request-source: toad-tutorial
   authorization: Bearer tutorial-token
   content-type: application/json
-  content-length: 75
-  accept: */*
-  host: localhost:8080
-Body:
+body
 {
   "body": "My first post",
   "title": "Hello from toad",
   "userId": 1
 }
-----------------------------------------
+[create-post] 201 (290ms)
+{
+  "body": "My first post",
+  "id": 101,
+  "title": "Hello from toad",
+  "userId": 1
+}
 ```
 
 There's the `Authorization` header from step 7, the custom header from step 5, and the body with `{{user_id}}`
-filled in.
-
-The first terminal shows a failure:
-
-```
-[create-post] 200 (2ms)
-OK
-create-post -> request 'create-post' expected status [201] but got 200
-```
-
-That's expected. Listen mode always answers `200 OK`, and `create-post` expects `201`. You're only using listen
-mode to look at the request, so the failure doesn't matter here.
-
-Stop the listener with Ctrl+C when you're done.
+filled in. Toad adds `content-type: application/json` because the body is JSON.
 
 ## 9. Chaining Requests
 
@@ -525,9 +496,6 @@ base_url = "https://jsonplaceholder.typicode.com"
 user_id = "1"
 token = "tutorial-token"
 
-[profiles.listen]
-base_url = "http://localhost:8080"
-
 [get-post]
 url = "{{base_url}}/posts/11"
 expect_status = [200]
@@ -593,19 +561,6 @@ toad tutorial.toml -o quiet
   `[confg]` is read as a request named `confg`, and fails with ``missing field `url` (did you mean [config]?)``.
 - **Requests run in file order, and captures only flow forward.** A request can use a value captured by a request
   above it, not below it.
-- **Listen mode always answers `200 OK` with the body `OK`.** Use it with one request at a time, like
-  `toad tutorial.toml create-post -p listen`. Running the whole collection against it stops at `get-post`, because
-  `OK` isn't JSON and the capture fails. With the finished collection's `retry = 2`, toad tries three times first:
-
-  ```
-  [get-post] 200 (3ms)
-  retrying 'get-post' in 500ms (attempt 2 of 3): capture 'user_id': response body is not JSON
-  [get-post] 200 (2ms)
-  retrying 'get-post' in 500ms (attempt 3 of 3): capture 'user_id': response body is not JSON
-  [get-post] 200 (1ms)
-  get-post -> capture 'user_id': response body is not JSON (after 3 attempts)
-  ```
-
 - **JSONPlaceholder doesn't save writes.** `create-post` returns id 101 every time, and `GET /posts/101` returns
   404. Against a real API, you would capture the new id and use it in later requests. The
   [Variable Capture](variable_capture.md#create-read-update-delete) guide has that example.

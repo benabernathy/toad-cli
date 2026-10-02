@@ -7,7 +7,8 @@ use crate::time_limit::TimeScale;
 #[derive(Parser)]
 #[command(name = "toad", version, about = "A developer-friendly REST client")]
 pub struct Cli {
-    /// Path to the collection file (omit when using --listen)
+    /// Path to the collection file
+    #[arg(required_unless_present = "schema")]
     pub file: Option<PathBuf>,
 
     /// Name of the request to run (omits runs all)
@@ -25,18 +26,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub profile: Option<String>,
 
-    /// Listen for inbound requests on this port and log/record them, instead of running a collection
-    #[arg(long, conflicts_with = "file")]
-    pub listen: Option<u16>,
-
     /// Print the JSON Schema for collection files and exit. Editors use it for autocomplete
     /// and to flag misspelled settings.
-    #[arg(long, conflicts_with_all = ["file", "listen"])]
+    #[arg(long, conflicts_with = "file")]
     pub schema: bool,
-
-    /// Append captured request output to this file (only used with --listen)
-    #[arg(long, requires = "listen")]
-    pub output_file: Option<PathBuf>,
 
     /// Path to a custom CA bundle (PEM, JKS, or PKCS12) to trust, overriding any
     /// `use_custom_ca` set in the collection file's [config]

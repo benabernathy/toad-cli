@@ -25,3 +25,25 @@ expect_stauts = [200]
     // Nothing was sent, not even the first request
     assert!(stdout(&output).is_empty(), "{}", stdout(&output));
 }
+
+#[test]
+fn collection_file_is_required() {
+    let output = toad(&[]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("the following required arguments were not provided"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn listen_option_is_gone() {
+    let output = toad(&["--listen", "8080"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("unexpected argument '--listen'"),
+        "{}",
+        stderr(&output)
+    );
+}
