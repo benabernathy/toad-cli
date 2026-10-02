@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use std::fs;
+use std::time::Instant;
 
 mod cli;
 use cli::{Cli, OutputFormat};
@@ -20,8 +21,8 @@ mod output;
 use crate::{
     collection::load_ext_body,
     output::{
-        NormalOutput, OutputMode, QuietOutput, RequestOnlyOutput, ResponseOnlyOutput, SilentOutput,
-        VerboseOutput,
+        JsonOutput, NormalOutput, OutputMode, QuietOutput, RequestOnlyOutput, ResponseOnlyOutput,
+        SilentOutput, Summary, VerboseOutput,
     },
 };
 
@@ -60,6 +61,7 @@ fn main() -> Result<()> {
         Ok("verbose") => OutputFormat::Verbose,
         Ok("response-only") => OutputFormat::ResponseOnly,
         Ok("request-only") => OutputFormat::RequestOnly,
+        Ok("json") => OutputFormat::Json,
         Ok(unknown) => {
             eprintln!("unknown TOAD_OUTPUT value: '{}', using normal", unknown);
             OutputFormat::Normal
@@ -79,6 +81,7 @@ fn main() -> Result<()> {
         OutputFormat::ResponseOnly => Box::new(ResponseOnlyOutput {}),
         OutputFormat::Normal => Box::new(NormalOutput {}),
         OutputFormat::RequestOnly => Box::new(RequestOnlyOutput {}),
+        OutputFormat::Json => Box::new(JsonOutput {}),
     };
 
     let content =
@@ -135,21 +138,31 @@ fn main() -> Result<()> {
         output: output.as_ref(),
     };
 
+    let started = Instant::now();
+    let names: Vec<&str> = requests.iter().map(|(name, _)| name.as_str()).collect();
+    output.run_start(&names);
+
     // Report every undefined variable and unset environment variable before sending anything
     let resolved = variables::resolve_vars(rf.vars.clone(), &interpolate::system_env);
     let problems =
         variables::check_requests(&requests, &rf.config, &resolved, &interpolate::system_env);
     if !problems.is_empty() {
         for (name, problem) in &problems {
-            output.request_error(name, problem);
+            output.request_error(name, &anyhow!("{problem}"));
         }
+        output.run_finished(&Summary {
+            passed: 0,
+            failed: 0,
+            not_run: requests.len(),
+            elapsed: started.elapsed(),
+        });
         std::process::exit(1);
     }
 
     // Captured values are added to this as requests run
     let mut vars = resolved.vars;
 
-    for (name, req) in &requests {
+    for (i, (name, req)) in requests.iter().enumerate() {
         // --use-custom-ca applies even when the request ignores the config's use_custom_ca
         let mut config = rf.config.without(&req.ignore_config);
         if let Some(ca_path) = &cli.use_custom_ca {
@@ -161,11 +174,24 @@ fn main() -> Result<()> {
         match result {
             Ok(captured) => vars.extend(captured),
             Err(e) => {
-                output.request_error(name, format!("{:?}", e).as_str());
+                output.request_error(name, &e);
+                output.run_finished(&Summary {
+                    passed: i,
+                    failed: 1,
+                    not_run: requests.len() - i - 1,
+                    elapsed: started.elapsed(),
+                });
                 std::process::exit(1);
             }
         }
     }
+
+    output.run_finished(&Summary {
+        passed: requests.len(),
+        failed: 0,
+        not_run: 0,
+        elapsed: started.elapsed(),
+    });
 
     Ok(())
 }

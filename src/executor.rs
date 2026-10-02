@@ -4,7 +4,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
-use reqwest::StatusCode;
 use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
@@ -14,7 +13,7 @@ use crate::interpolate::interpolate;
 use crate::retry::RetryPolicy;
 use crate::time_limit::TimeLimits;
 
-use crate::output::OutputMode;
+use crate::output::{OutputMode, Received};
 
 /// Settings that are the same for every request in a run.
 pub struct RunContext<'a> {
@@ -91,6 +90,7 @@ pub fn execute_request(
     let mut builder = client
         .request(reqwest::Method::from_bytes(method.as_bytes())?, &url)
         .headers(header_map.clone());
+    let mut sent_url = url.clone();
 
     if !req.query.is_empty() {
         let query: Vec<(String, String)> = req
@@ -101,6 +101,7 @@ pub fn execute_request(
 
         let url = reqwest::Url::parse_with_params(&url, &query)
             .with_context(|| format!("could not build query params for '{name}'"))?;
+        sent_url = url.to_string();
 
         builder = client
             .request(reqwest::Method::from_bytes(method.as_bytes())?, url)
@@ -111,7 +112,7 @@ pub fn execute_request(
         builder = builder.body(b);
     }
 
-    output.request_start(name, req, vars, &header_map, &url);
+    output.request_start(name, req, vars, &header_map, &url, &sent_url);
 
     let attempts = retry.attempts();
     let mut attempt = 1;
@@ -126,7 +127,7 @@ pub fn execute_request(
         match outcome {
             Ok(captured) => {
                 if let Some(r) = &received {
-                    output.request_complete(name, r.status, r.elapsed, &r.body);
+                    output.request_complete(name, r);
                 }
                 if !captured.is_empty() {
                     output.request_captured(name, &captured);
@@ -137,9 +138,7 @@ pub fn execute_request(
                 attempt += 1;
                 output.attempt_failed(
                     name,
-                    received
-                        .as_ref()
-                        .map(|r| (r.status, r.elapsed, r.body.as_str())),
+                    received.as_ref(),
                     &format!("{err:#}"),
                     attempt,
                     attempts,
@@ -149,7 +148,7 @@ pub fn execute_request(
             }
             Err(err) => {
                 if let Some(r) = &received {
-                    output.request_complete(name, r.status, r.elapsed, &r.body);
+                    output.request_complete(name, r);
                 }
                 if attempts > 1 {
                     return Err(anyhow!("{err:#} (after {attempts} attempts)"));
@@ -158,14 +157,6 @@ pub fn execute_request(
             }
         }
     }
-}
-
-/// A response as it was received, before any checks.
-struct Received {
-    status: StatusCode,
-    headers: HeaderMap,
-    body: String,
-    elapsed: Duration,
 }
 
 /// The result of one attempt. `received` is `None` when the request could not be sent.

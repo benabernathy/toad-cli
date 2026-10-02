@@ -62,4 +62,6 @@ pub enum OutputFormat {
     Verbose,
     ResponseOnly,
     RequestOnly,
+    /// One JSON object per line for each event, for scripts and CI reports
+    Json,
 }

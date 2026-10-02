@@ -72,6 +72,9 @@ expect_status = [404]
 
 - Finally, you can tell toad to shout it's output: `toad test.toml -o verbose`. Toad will show you the resolved URL, headers, body, and response. See [doc/output_format.md](doc/output_format.md) for all the output modes.
 
+- For scripts and CI, `toad test.toml -o json` prints one JSON object per line for each request, response, and
+  captured value, then a summary. See [doc/output_format.md](doc/output_format.md#json-output).
+
 ### Usage 
 
 ### Run A Single Operation and Save Output Only
@@ -221,6 +224,12 @@ line of a collection:
 
 Or save the schema for the toad you have installed with `toad --schema > toad.schema.json`. See
 [doc/schema.md](doc/schema.md) for using it offline, applying it to a whole folder, and checking collections in CI.
+
+### Security and Privacy
+
+Depending on the output mode, toad prints request headers, response bodies, and captured values, which can include
+tokens. Use `-o quiet` or `-o silent` in CI logs. See [doc/security.md](doc/security.md) for what each mode prints,
+login tokens in CI, and keeping secrets out of collection files.
 
 ## Contributing
 
