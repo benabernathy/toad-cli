@@ -25,12 +25,12 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ## v0.5.0 — Debugging Support
 
-- [ ] Environment variables in collections — `token = "{{env:API_TOKEN}}"` reads a value from the environment and fails clearly if it isn't set, so the same collection runs locally and in CI without keeping secrets in the file
-- [ ] "Step" through request - `--step` or `-s` on the command line will cause toad to stop and wait for the user to `s` to step to the next request or `c` to continue to the end
-- [ ] Override request execution order by providing a specific list in the collections file. 
-- [ ] Set breakpoints in the specific list or implicit order with a `[breakpoint]` entry. Hitting the breakpoint puts toad into the step mode
-- [ ] JSON Schema for collection files — editors with TOML schema support (e.g. Even Better TOML in VS Code) get autocomplete, inline docs, and typo warnings for collection settings
-- [ ] JSON output — `-o json` prints one JSON event per line (request start, failed attempt, response, captures, errors) for scripts, CI reports, and a future VS Code extension
+- [ ] Environment variables in collections — `token = "{{env:API_TOKEN}}"` reads a value from the environment and fails clearly if it isn't set, so the same collection runs locally and in CI without keeping secrets in the file [issue](https://github.com/benabernathy/toad-cli/issues/17)
+- [ ] "Step" through request - `--step` or `-s` on the command line will cause toad to stop before each request and wait for the user to `s` to step to the next request, `c` to continue to the next breakpoint, `r` to run to the end ignoring breakpoints, or `q` to quit [issue](https://github.com/benabernathy/toad-cli/issues/18)
+- [ ] Override request execution order by providing a specific list in the collections file. [issue](https://github.com/benabernathy/toad-cli/issues/19)
+- [ ] Breakpoints - `--break <request>` or `-b` on the command line stops before that request and puts toad into step mode. Breakpoints are never saved in the collection file [issue](https://github.com/benabernathy/toad-cli/issues/20)
+- [ ] JSON Schema for collection files — editors with TOML schema support (e.g. Even Better TOML in VS Code) get autocomplete, inline docs, and typo warnings for collection settings [issue](https://github.com/benabernathy/toad-cli/issues/21)
+- [ ] JSON output — `-o json` prints one JSON event per line (request start, failed attempt, response, captures, errors) for scripts, CI reports, and a future VS Code extension [issue](https://github.com/benabernathy/toad-cli/issues/22)
 
 ---
 
