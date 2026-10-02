@@ -15,6 +15,7 @@ pub trait OutputMode {
     ) {
     }
     fn request_complete(&self, _name: &str, _status: StatusCode, _elapsed: Duration, _body: &str) {}
+    fn request_captured(&self, _name: &str, _captured: &[(String, String)]) {}
     fn request_error(&self, _name: &str, _err: &str) {}
 }
 
@@ -101,7 +102,11 @@ impl OutputMode for VerboseOutput {
         if !req.query.is_empty() {
             println!("{}", "query:".dimmed());
             for (k, v) in &req.query {
-                println!("  {} = {}", k.dimmed(), interpolate(v, vars));
+                println!(
+                    "  {} = {}",
+                    k.dimmed(),
+                    interpolate(v, vars).unwrap_or_else(|_| v.clone())
+                );
             }
         }
 
@@ -116,9 +121,9 @@ impl OutputMode for VerboseOutput {
             }
         }
 
-        if let Some(body) = &req.body {
+        if let Some(Ok(body)) = req.resolved_body(vars) {
             println!("{}", "body".dimmed());
-            println!("{}", try_pretty_json(&interpolate(body, vars)));
+            println!("{}", try_pretty_json(&body));
         }
     }
 
@@ -127,6 +132,13 @@ impl OutputMode for VerboseOutput {
 
         println!("[{}] {} ({:.0?})", name, status_colored, elapsed);
         println!("{}", try_pretty_json(body));
+    }
+
+    fn request_captured(&self, _name: &str, captured: &[(String, String)]) {
+        println!("{}", "captured:".dimmed());
+        for (k, v) in captured {
+            println!("  {} = {}", k.dimmed(), v);
+        }
     }
 
     fn request_error(&self, name: &str, err: &str) {
@@ -165,9 +177,9 @@ impl OutputMode for RequestOnlyOutput {
         _header_map: &HeaderMap,
         _url: &str,
     ) {
-        if let Some(body) = &req.body {
+        if let Some(Ok(body)) = req.resolved_body(vars) {
             println!("{}", "body".dimmed());
-            println!("{}", try_pretty_json(&interpolate(body, vars)));
+            println!("{}", try_pretty_json(&body));
         }
     }
 

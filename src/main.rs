@@ -8,7 +8,9 @@ use cli::{Cli, OutputFormat};
 mod interpolate;
 
 mod collection;
-use collection::{RequestFile, load_requests, resolve_custom_ca};
+use collection::{
+    RequestFile, load_requests, parse_captures, resolve_custom_ca, validate_ignore_config,
+};
 
 mod executor;
 use executor::execute_request;
@@ -27,6 +29,8 @@ mod serve;
 mod ca;
 
 mod auth;
+
+mod capture;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -74,11 +78,9 @@ fn main() -> Result<()> {
         toml::from_str(&content).with_context(|| format!("could not parse {}", file.display()))?;
 
     load_ext_body(&mut rf, file)?;
+    parse_captures(&mut rf)?;
+    validate_ignore_config(&rf)?;
     resolve_custom_ca(&mut rf.config, file);
-
-    if let Some(ca_path) = &cli.use_custom_ca {
-        rf.config.use_custom_ca = Some(ca_path.to_string_lossy().to_string());
-    }
 
     let ca_password = cli
         .use_custom_ca_password
@@ -104,18 +106,30 @@ fn main() -> Result<()> {
         }
     }
 
+    // Captured values are added to this as requests run
+    let mut vars = rf.vars.clone();
+
     for (name, req) in &requests {
+        // --use-custom-ca applies even when the request ignores the config's use_custom_ca
+        let mut config = rf.config.without(&req.ignore_config);
+        if let Some(ca_path) = &cli.use_custom_ca {
+            config.use_custom_ca = Some(ca_path.to_string_lossy().to_string());
+        }
+
         let result = execute_request(
             name,
             req,
-            &rf.vars,
-            rf.config.clone(),
+            &vars,
+            config,
             ca_password.as_deref(),
             output.as_ref(),
         );
-        if let Err(e) = result {
-            output.request_error(name, format!("{:?}", e).as_str());
-            std::process::exit(1);
+        match result {
+            Ok(captured) => vars.extend(captured),
+            Err(e) => {
+                output.request_error(name, format!("{:?}", e).as_str());
+                std::process::exit(1);
+            }
         }
     }
 

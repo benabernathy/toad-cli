@@ -108,6 +108,30 @@ Set `auth` in `[config]` to apply it to every request in the collection by defau
 per-request when needed. See [doc/auth.md](doc/auth.md) for details, precedence rules, and
 troubleshooting.
 
+### Variable Capture
+
+A request can capture values from its response for later requests to use:
+
+```toml
+[create-user]
+method = "POST"
+url = "{{base_url}}/users"
+body = '{"name": "Toad"}'
+
+[create-user.capture]
+user_id = "$.id"                  # JSONPath into the response body
+location = "header:Location"      # a response header
+
+[get-user]
+method = "GET"
+url = "{{base_url}}/users/{{user_id}}"
+```
+
+Captures can use JSONPath (RFC 9535) queries, response headers, the status code, or the raw body. A request
+that uses an undefined `{{variable}}` fails instead of sending the literal text. To send literal braces, write
+`\{{` or set `interpolate_body = false` on the request. See
+[doc/variable_capture.md](doc/variable_capture.md) for examples, including logging in and reusing a token.
+
 ### Custom CA
 
 If a server presents a certificate signed by a CA that isn't in your system's trust
