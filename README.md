@@ -225,6 +225,12 @@ line of a collection:
 Or save the schema for the toad you have installed with `toad --schema > toad.schema.json`. See
 [doc/schema.md](doc/schema.md) for using it offline, applying it to a whole folder, and checking collections in CI.
 
+### Security and Privacy
+
+Depending on the output mode, toad prints request headers, response bodies, and captured values, which can include
+tokens. Use `-o quiet` or `-o silent` in CI logs. See [doc/security.md](doc/security.md) for what each mode prints,
+login tokens in CI, and keeping secrets out of collection files.
+
 ## Contributing
 
 Feature requests and bug reports are welcome via [GitHub Issues](https://github.com/benabernathy/toad-cli/issues).

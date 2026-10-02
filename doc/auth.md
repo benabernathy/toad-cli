@@ -95,17 +95,17 @@ Fix it by removing one of the two.
 
 ## Keeping Real Credentials Out of Source Control
 
-`auth` only removes the boilerplate of writing the header yourself — it doesn't change where
-`{{token}}`/`{{user}}`/`{{pass}}` get their values. Those still come from `[vars]` or `[profiles]` in the
-collection file. To keep a real secret out of a file you commit:
+`auth` only removes the boilerplate of writing the header yourself. It doesn't change where
+`{{token}}`/`{{user}}`/`{{pass}}` get their values. To keep a real secret out of a file you commit, read it from
+the environment:
 
-- Put the real value in an untracked `[profiles.*]` block or a local, git-ignored copy of the collection
-  file, and select it with `--profile <name>` or by pointing toad at your local file.
-- Don't put real tokens/passwords directly in a `[vars]` table that gets committed.
+```toml
+[vars]
+token = "{{env:API_TOKEN}}"
+```
 
-(This is a general limitation of how `vars` work today, not something specific to `auth` — see
-[doc/custom_ca.md](custom_ca.md) for how the custom CA password is handled differently, via
-`--use-custom-ca-password`/`TOAD_CA_PASSWORD`.)
+See [Environment Variables](env_vars.md), and [Security and Privacy](security.md) for where credentials can show up
+in toad's output.
 
 ## Troubleshooting
 

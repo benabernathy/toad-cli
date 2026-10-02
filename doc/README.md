@@ -10,7 +10,7 @@ from a single request up to a CI smoke test.
 
 | Guide                                      | Covers                                                                          |
 |--------------------------------------------|---------------------------------------------------------------------------------|
-| [Output Format](output_format.md)          | The output modes (`normal`, `quiet`, `silent`, `verbose`, `response-only`, `request-only`) and `TOAD_OUTPUT` |
+| [Output Format](output_format.md)          | The output modes (`normal`, `quiet`, `silent`, `verbose`, `response-only`, `request-only`, `json`) and `TOAD_OUTPUT` |
 | [Authentication](auth.md)                  | The `auth` shorthand for bearer and basic auth, and setting a default in `[config]` |
 | [Custom CA](custom_ca.md)                  | Trusting an internal or corporate CA with a PEM, JKS, or PKCS12 file            |
 | [Environment Variables](env_vars.md)       | Reading values from the environment with `{{env:NAME}}`, and the check toad runs before sending anything |
@@ -18,6 +18,7 @@ from a single request up to a CI smoke test.
 | [Response Time Assertions](response_time.md) | Failing slow requests with `expect_max_ms`, and scaling limits with `--time-scale` |
 | [Retry on Failure](retry.md)               | Retrying failed requests with `retry`, and what counts as a failure             |
 | [JSON Schema](schema.md)                   | Autocomplete and misspelled-setting warnings in VS Code and other editors       |
+| [Security and Privacy](security.md)        | Where secrets and personal data can end up, keeping them out of collection files and CI logs |
 
 ## Command Line Options
 

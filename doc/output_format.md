@@ -145,6 +145,8 @@ appears in full in `captured`.
 
 `-o verbose` shows the whole header, because it is meant for checking your own requests.
 
+See [Security and Privacy](security.md#json-output-in-ci) before using JSON output in CI.
+
 ### Reading the events
 
 With [jq](https://jqlang.org/), print the name, status, and time of each response:
