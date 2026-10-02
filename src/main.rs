@@ -34,6 +34,8 @@ mod auth;
 mod capture;
 
 mod time_limit;
+
+mod variables;
 use time_limit::TimeLimits;
 
 mod retry;
@@ -87,6 +89,7 @@ fn main() -> Result<()> {
     load_ext_body(&mut rf, file)?;
     parse_captures(&mut rf)?;
     validate_ignore_config(&rf)?;
+    variables::validate_names(&rf)?;
     validate_expect_max_ms(&rf)?;
     resolve_custom_ca(&mut rf.config, file);
 
@@ -131,8 +134,19 @@ fn main() -> Result<()> {
         output: output.as_ref(),
     };
 
+    // Report every undefined variable and unset environment variable before sending anything
+    let resolved = variables::resolve_vars(rf.vars.clone(), &interpolate::system_env);
+    let problems =
+        variables::check_requests(&requests, &rf.config, &resolved, &interpolate::system_env);
+    if !problems.is_empty() {
+        for (name, problem) in &problems {
+            output.request_error(name, problem);
+        }
+        std::process::exit(1);
+    }
+
     // Captured values are added to this as requests run
-    let mut vars = rf.vars.clone();
+    let mut vars = resolved.vars;
 
     for (name, req) in &requests {
         // --use-custom-ca applies even when the request ignores the config's use_custom_ca

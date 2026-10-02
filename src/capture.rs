@@ -29,6 +29,9 @@ impl Capture {
                 name
             ));
         }
+        if name.starts_with(crate::interpolate::ENV_PREFIX) {
+            return Err(crate::variables::reserved_name_error(&format!("'{name}'")));
+        }
 
         let source = if expr.starts_with('$') {
             let path = JsonPath::parse(expr)
