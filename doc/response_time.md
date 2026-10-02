@@ -67,6 +67,9 @@ After a response arrives, toad checks, in order:
 A response with the wrong status fails with the status error, even if it was also slow. A response that is slow
 but otherwise correct fails, and nothing is captured from it.
 
+If the request has `retry` set, a slow response is retried like any other failure, and each attempt is timed on
+its own. See [doc/retry.md](retry.md).
+
 ## Adjusting Limits for Slower Environments
 
 CI machines and shared test environments are often slower than a developer's machine. Rather than editing every
