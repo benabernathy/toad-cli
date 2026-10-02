@@ -23,7 +23,15 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ---
 
-## v0.5.0 — Payload Improvements
+## v0.5.0 — Debugging Support
+
+- [ ] "Step" through request - `--step` or `-s` on the command line will cause toad to stop and wait for the user to `s` to step to the next request or `c` to continue to the end
+- [ ] Override request execution order by providing a specific list in the collections file. 
+- [ ] Set breakpoints in the specific list or implicit order with a `[breakpoint]` entry. Hitting the breakpoint puts toad into the step mode
+
+---
+
+## v0.6.0 — Payload Improvements
 - [ ] Form encoding support — `content_type = "application/x-www-form-urlencoded"`
 - [ ] Multipart form support
 
