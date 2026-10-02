@@ -132,6 +132,23 @@ that uses an undefined `{{variable}}` fails instead of sending the literal text.
 `\{{` or set `interpolate_body = false` on the request. See
 [doc/variable_capture.md](doc/variable_capture.md) for examples, including logging in and reusing a token.
 
+### Response Time Assertions
+
+Fail a request that takes too long with `expect_max_ms`, per request or as a `[config]` default:
+
+```toml
+[config]
+expect_max_ms = 1000
+
+[search]
+url = "{{base_url}}/search"
+expect_max_ms = 2000
+```
+
+To relax every limit at once in a slower environment, use `--time-scale 2` or `TOAD_TIME_SCALE=2` (the flag wins
+if both are set), or `off` to skip time limits. See [doc/response_time.md](doc/response_time.md) for what is timed,
+warnings, and troubleshooting.
+
 ### Custom CA
 
 If a server presents a certificate signed by a CA that isn't in your system's trust
