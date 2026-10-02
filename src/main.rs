@@ -34,6 +34,8 @@ mod auth;
 mod capture;
 
 mod time_limit;
+
+mod schema;
 use time_limit::TimeLimits;
 
 mod retry;

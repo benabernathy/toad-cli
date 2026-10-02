@@ -96,68 +96,106 @@ impl RequestFile {
     }
 }
 
+/// Settings that apply to every request in the collection. A request's own setting wins over
+/// the one here, and `ignore_config` turns one off for a single request.
+// The doc comments here and on `RequestDef` are the descriptions in `schema/toad.schema.json`.
 #[derive(Debug, Deserialize, Default, Clone)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Skip TLS certificate verification. Only for test servers with self-signed certificates.
     #[serde(default)]
     pub ignore_ssl: bool,
 
+    /// Path to a CA bundle (PEM, JKS, or PKCS12) to trust, relative to the collection file.
+    /// The keystore password comes from `--use-custom-ca-password` or `TOAD_CA_PASSWORD`.
     #[serde(default)]
     pub use_custom_ca: Option<String>,
 
+    /// Authorization shorthand for every request: "bearer <token>" or "basic <user>:<pass>",
+    /// e.g. "bearer {{token}}".
     #[serde(default)]
     pub auth: Option<String>,
 
+    /// Fail a request that takes longer than this many milliseconds.
     #[serde(default)]
     pub expect_max_ms: Option<u64>,
 
+    /// Retry a failed request this many more times. `retry = 3` means up to 4 attempts.
     #[serde(default)]
     pub retry: Option<u32>,
 
+    /// Milliseconds to wait between retries. Defaults to 1000.
     #[serde(default)]
     pub retry_delay_ms: Option<u64>,
 }
 
+/// One request. Every top-level table other than `[config]`, `[vars]`, and `[profiles]` is a
+/// request, and the table name is the request name.
 #[derive(Debug, Deserialize, Clone)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RequestDef {
+    /// HTTP method. Defaults to GET.
     #[serde(default = "default_method")]
+    #[cfg_attr(test, schemars(schema_with = "crate::schema::method"))]
     pub method: String,
 
+    /// URL to send the request to, e.g. "{{base_url}}/users/1".
     pub url: String,
 
+    /// Request headers, e.g. { Accept = "application/json" }.
     #[serde(default)]
     pub headers: HashMap<String, String>,
 
+    /// Query string parameters, added to the URL.
     #[serde(default)]
     pub query: HashMap<String, String>,
 
+    /// Request body. Use either `body` or `body_file`, not both.
     pub body: Option<String>,
 
+    /// Path to a file to send as the request body, relative to the collection file.
     pub body_file: Option<String>,
 
     /// When false, `body`/`body_file` is sent exactly as written, without `{{var}}` interpolation
     #[serde(default = "default_true")]
     pub interpolate_body: bool,
 
+    /// Authorization shorthand: "bearer <token>" or "basic <user>:<pass>", e.g.
+    /// "bearer {{token}}". Overrides `auth` in `[config]`.
     #[serde(default)]
     pub auth: Option<String>,
 
+    /// Status codes that count as a pass. Without it, any response passes.
+    // `default` keeps the schema from marking this required, since `schema_with` hides the Option
+    #[serde(default)]
+    #[cfg_attr(test, schemars(schema_with = "crate::schema::status_codes"))]
     pub expect_status: Option<Vec<u16>>,
 
+    /// Fail the request if it takes longer than this many milliseconds. Overrides
+    /// `expect_max_ms` in `[config]`.
     pub expect_max_ms: Option<u64>,
 
+    /// Retry the request this many more times if it fails. Overrides `retry` in `[config]`.
     pub retry: Option<u32>,
 
+    /// Milliseconds to wait between retries. Overrides `retry_delay_ms` in `[config]`.
     pub retry_delay_ms: Option<u64>,
 
+    /// Seconds to wait for a response before giving up. Defaults to 30.
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
 
+    /// Values to read from the response into variables for later requests. Each value is a
+    /// JSONPath query starting with "$", "header:<Name>", "status", or "body".
     #[serde(default)]
+    #[cfg_attr(test, schemars(schema_with = "crate::schema::captures"))]
     pub capture: IndexMap<String, String>,
 
+    /// `[config]` settings to ignore for this request.
     #[serde(default)]
+    #[cfg_attr(test, schemars(schema_with = "crate::schema::config_keys"))]
     pub ignore_config: Vec<String>,
 
     /// Parsed from `capture` by `parse_captures`.
@@ -183,7 +221,7 @@ impl RequestDef {
     }
 }
 
-const CONFIG_KEYS: [&str; 6] = [
+pub const CONFIG_KEYS: [&str; 6] = [
     "auth",
     "use_custom_ca",
     "ignore_ssl",

@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": {
+    "$ref": "#/definitions/RequestDef"
+  },
+  "definitions": {
+    "Config": {
+      "additionalProperties": false,
+      "description": "Settings that apply to every request in the collection. A request's own setting wins over\nthe one here, and `ignore_config` turns one off for a single request.",
+      "properties": {
+        "auth": {
+          "description": "Authorization shorthand for every request: \"bearer <token>\" or \"basic <user>:<pass>\",\ne.g. \"bearer {{token}}\".",
+          "type": "string"
+        },
+        "expect_max_ms": {
+          "description": "Fail a request that takes longer than this many milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ignore_ssl": {
+          "default": false,
+          "description": "Skip TLS certificate verification. Only for test servers with self-signed certificates.",
+          "type": "boolean"
+        },
+        "retry": {
+          "description": "Retry a failed request this many more times. `retry = 3` means up to 4 attempts.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retry_delay_ms": {
+          "description": "Milliseconds to wait between retries. Defaults to 1000.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "use_custom_ca": {
+          "description": "Path to a CA bundle (PEM, JKS, or PKCS12) to trust, relative to the collection file.\nThe keystore password comes from `--use-custom-ca-password` or `TOAD_CA_PASSWORD`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RequestDef": {
+      "additionalProperties": false,
+      "description": "One request. Every top-level table other than `[config]`, `[vars]`, and `[profiles]` is a\nrequest, and the table name is the request name.",
+      "properties": {
+        "auth": {
+          "description": "Authorization shorthand: \"bearer <token>\" or \"basic <user>:<pass>\", e.g.\n\"bearer {{token}}\". Overrides `auth` in `[config]`.",
+          "type": "string"
+        },
+        "body": {
+          "description": "Request body. Use either `body` or `body_file`, not both.",
+          "type": "string"
+        },
+        "body_file": {
+          "description": "Path to a file to send as the request body, relative to the collection file.",
+          "type": "string"
+        },
+        "capture": {
+          "additionalProperties": {
+            "pattern": "^(\\$.*|header:.+|status|body)$",
+            "type": "string"
+          },
+          "default": {},
+          "description": "Values to read from the response into variables for later requests. Each value is a\nJSONPath query starting with \"$\", \"header:<Name>\", \"status\", or \"body\".",
+          "propertyNames": {
+            "pattern": "^[^\\s{}]+$"
+          },
+          "type": "object"
+        },
+        "expect_max_ms": {
+          "description": "Fail the request if it takes longer than this many milliseconds. Overrides\n`expect_max_ms` in `[config]`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expect_status": {
+          "description": "Status codes that count as a pass. Without it, any response passes.",
+          "items": {
+            "maximum": 599,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Request headers, e.g. { Accept = \"application/json\" }.",
+          "type": "object"
+        },
+        "ignore_config": {
+          "default": [],
+          "description": "`[config]` settings to ignore for this request.",
+          "items": {
+            "enum": [
+              "auth",
+              "use_custom_ca",
+              "ignore_ssl",
+              "expect_max_ms",
+              "retry",
+              "retry_delay_ms"
+            ]
+          },
+          "type": "array"
+        },
+        "interpolate_body": {
+          "default": true,
+          "description": "When false, `body`/`body_file` is sent exactly as written, without `{{var}}` interpolation",
+          "type": "boolean"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "HEAD",
+                "OPTIONS"
+              ]
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "GET",
+          "description": "HTTP method. Defaults to GET.",
+          "type": "string"
+        },
+        "query": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Query string parameters, added to the URL.",
+          "type": "object"
+        },
+        "retry": {
+          "description": "Retry the request this many more times if it fails. Overrides `retry` in `[config]`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retry_delay_ms": {
+          "description": "Milliseconds to wait between retries. Overrides `retry_delay_ms` in `[config]`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout_secs": {
+          "default": 30,
+          "description": "Seconds to wait for a response before giving up. Defaults to 30.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "URL to send the request to, e.g. \"{{base_url}}/users/1\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "A toad collection file. See https://github.com/benabernathy/toad-cli",
+  "properties": {
+    "config": {
+      "$ref": "#/definitions/Config"
+    },
+    "profiles": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "description": "Named sets of variables, chosen with --profile. A profile's values replace the ones in [vars].",
+      "type": "object"
+    },
+    "vars": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Variables used as {{name}} in requests.",
+      "type": "object"
+    }
+  },
+  "title": "toad collection",
+  "type": "object"
+}
