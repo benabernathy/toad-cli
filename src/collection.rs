@@ -505,7 +505,8 @@ mod tests {
         let req = &collection.requests["r"];
         assert_eq!(req.auth.as_deref(), Some("bearer {{token}}"));
         assert!(req.tls.ignore_ssl);
-        assert_eq!(req.tls.custom_ca.as_deref(), Some("./ca.pem"));
+        let expected_ca = Path::new(".").join("ca.pem");
+        assert_eq!(req.tls.custom_ca.as_deref(), expected_ca.to_str());
         assert_eq!(req.max_ms, Some(500));
         assert_eq!(
             req.retry,
