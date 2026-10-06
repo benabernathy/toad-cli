@@ -16,6 +16,7 @@ from a single request up to a CI smoke test.
 | [Environment Variables](env_vars.md)       | Reading values from the environment with `{{env:NAME}}`, and the check toad runs before sending anything |
 | [Variable Capture](variable_capture.md)    | Capturing values from a response with JSONPath, headers, or status, using them in later requests, and sending literal `{{...}}` text |
 | [Command Line Variables](cli_vars.md)     | Setting a variable for one run with `--var`, and which value wins               |
+| [Execution Order](order.md)               | Running requests in a different order than the file, more than once, or leaving some out, with `order` |
 | [Step Mode and Breakpoints](step.md)      | Running one request at a time with `--step`, and stopping before a request with `--break` |
 | [Response Time Assertions](response_time.md) | Failing slow requests with `expect_max_ms`, and scaling limits with `--time-scale` |
 | [Retry on Failure](retry.md)               | Retrying failed requests with `retry`, and what counts as a failure             |
@@ -57,6 +58,7 @@ with `ignore_config` (see [Ignoring Config Settings](variable_capture.md#ignorin
 | `ignore_ssl`                     | `[config]`         | [Custom CA](custom_ca.md)                      |
 | `expect_max_ms`                  | `[config]`, request | [Response Time Assertions](response_time.md)  |
 | `retry`, `retry_delay_ms`        | `[config]`, request | [Retry on Failure](retry.md)                  |
+| `order`                          | `[config]`         | [Execution Order](order.md)                    |
 | `capture`                        | request            | [Variable Capture](variable_capture.md)        |
 | `interpolate_body`               | request            | [Variable Capture](variable_capture.md#sending-literal-braces) |
 | `ignore_config`                  | request            | [Variable Capture](variable_capture.md#ignoring-config-settings) |

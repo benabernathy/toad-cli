@@ -11,7 +11,7 @@ mod interpolate;
 mod collection;
 use collection::{
     RequestFile, load_requests, parse_captures, resolve_custom_ca, time_limit_warnings,
-    validate_expect_max_ms, validate_ignore_config,
+    validate_expect_max_ms, validate_ignore_config, validate_order,
 };
 
 mod executor;
@@ -99,6 +99,7 @@ fn main() -> Result<()> {
     variables::validate_names(&rf)?;
     variables::check_cli_vars(&rf, &cli.vars)?;
     validate_expect_max_ms(&rf)?;
+    validate_order(&rf)?;
     resolve_custom_ca(&mut rf.config, file);
 
     let ca_password = cli

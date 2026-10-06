@@ -85,6 +85,9 @@ next request is 'get-comments'
 [get-todos] 200 (60ms)
 ```
 
+With `order` in `[config]`, a request can run more than once, and `--break` stops before each run (see
+[Execution Order](order.md#breakpoints)).
+
 `--step` and `--break` can be used together. The run starts in step mode, and `c` runs to the next breakpoint.
 
 ## What Toad Does at a Stop

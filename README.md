@@ -159,6 +159,18 @@ toad api.toml get-task --var task_id=asdf123
 Repeat `--var` to set more than one. The variable must be declared in `[vars]`, a profile, or a capture, so a
 misspelled name is an error. See [doc/cli_vars.md](doc/cli_vars.md).
 
+### Execution Order
+
+Requests run in file order. To run a flow in a different order, run a request more than once, or leave some out,
+list them in `[config]`:
+
+```toml
+[config]
+order = ["create-post", "get-post", "update-post", "get-post", "delete-post"]
+```
+
+Naming a request on the command line still runs only that request. See [doc/order.md](doc/order.md).
+
 ### Step Mode and Breakpoints
 
 Run a collection one request at a time with `--step`, or stop before a request with `--break <request>`:

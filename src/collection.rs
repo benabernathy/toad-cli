@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -139,6 +139,13 @@ pub struct Config {
     /// Milliseconds to wait between retries. Defaults to 1000.
     #[serde(default)]
     pub retry_delay_ms: Option<u64>,
+
+    /// The requests to run, in this order. A request can be listed more than once, and requests
+    /// that aren't listed don't run. Without it, every request runs in file order. Naming a
+    /// request on the command line runs only that request.
+    #[serde(default)]
+    #[cfg_attr(test, schemars(length(min = 1)))]
+    pub order: Option<Vec<String>>,
 }
 
 /// One request. Every top-level table other than `[config]`, `[vars]`, and `[profiles]` is a
@@ -358,8 +365,11 @@ pub fn time_limit_warnings(
     config: &Config,
     limits: &TimeLimits,
 ) -> Vec<String> {
+    // A request listed more than once in `order` is only warned about once
+    let mut seen = HashSet::new();
     requests
         .iter()
+        .filter(|(name, _)| seen.insert(name))
         .filter_map(|(name, req)| {
             let max_ms = req.max_ms(&config.without(&req.ignore_config))?;
             let effective = limits.effective(max_ms)?;
@@ -387,6 +397,31 @@ pub fn resolve_custom_ca(config: &mut Config, request_file_path: &Path) {
     }
 }
 
+/// Checks that `[config] order` lists at least one request, and only requests in the collection.
+pub fn validate_order(rf: &RequestFile) -> Result<()> {
+    let Some(order) = &rf.config.order else {
+        return Ok(());
+    };
+    if order.is_empty() {
+        return Err(anyhow!(
+            "[config] order is empty. List the requests to run, or remove it to run every request in file order"
+        ));
+    }
+    for name in order {
+        if rf.requests.contains_key(name) {
+            continue;
+        }
+        let hint = closest(name, rf.requests.keys().map(String::as_str))
+            .map(|n| format!(" (did you mean '{n}'?)"))
+            .unwrap_or_default();
+        return Err(anyhow!("[config] order: no request named '{name}'{hint}"));
+    }
+    Ok(())
+}
+
+/// The requests to run, in run order. A request named on the command line runs on its own.
+/// Otherwise `[config] order` is used if it is set, which can list a request more than once, and
+/// every request in file order if it isn't.
 pub fn load_requests(rf: &RequestFile, name: Option<&str>) -> Result<Vec<(String, RequestDef)>> {
     match name {
         Some(n) => {
@@ -396,11 +431,18 @@ pub fn load_requests(rf: &RequestFile, name: Option<&str>) -> Result<Vec<(String
             })?;
             Ok(vec![(n.to_string(), req)])
         }
-        None => Ok(rf
-            .requests
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()),
+        None => match &rf.config.order {
+            // validate_order has checked that every name is a request
+            Some(order) => Ok(order
+                .iter()
+                .map(|n| (n.clone(), rf.requests[n].clone()))
+                .collect()),
+            None => Ok(rf
+                .requests
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()),
+        },
     }
 }
 
@@ -509,6 +551,122 @@ mod tests {
         assert_eq!(misspelled_section("profile"), Some("profiles"));
     }
 
+    fn names(requests: &[(String, RequestDef)]) -> Vec<&str> {
+        requests.iter().map(|(n, _)| n.as_str()).collect()
+    }
+
+    const FLOW: &str = r#"
+        [login]
+        url = "http://x/login"
+
+        [create-user]
+        url = "http://x/users"
+
+        [get-user]
+        url = "http://x/users/1"
+
+        [delete-user]
+        url = "http://x/users/1"
+        "#;
+
+    fn with_order(order: &str) -> String {
+        format!("[config]\norder = {order}\n{FLOW}")
+    }
+
+    #[test]
+    fn requests_run_in_file_order_by_default() {
+        let rf = parse(FLOW);
+        let requests = load_requests(&rf, None).unwrap();
+        assert_eq!(
+            names(&requests),
+            ["login", "create-user", "get-user", "delete-user"]
+        );
+    }
+
+    #[test]
+    fn order_sets_which_requests_run_and_when() {
+        let rf = parse(&with_order(r#"["login", "get-user", "create-user"]"#));
+        validate_order(&rf).unwrap();
+        let requests = load_requests(&rf, None).unwrap();
+        assert_eq!(names(&requests), ["login", "get-user", "create-user"]);
+    }
+
+    #[test]
+    fn order_can_repeat_a_request() {
+        let rf = parse(&with_order(
+            r#"["login", "create-user", "get-user", "delete-user", "get-user"]"#,
+        ));
+        validate_order(&rf).unwrap();
+        let requests = load_requests(&rf, None).unwrap();
+        assert_eq!(
+            names(&requests),
+            [
+                "login",
+                "create-user",
+                "get-user",
+                "delete-user",
+                "get-user"
+            ]
+        );
+    }
+
+    #[test]
+    fn named_request_ignores_order() {
+        let rf = parse(&with_order(r#"["login"]"#));
+        let requests = load_requests(&rf, Some("get-user")).unwrap();
+        assert_eq!(names(&requests), ["get-user"]);
+    }
+
+    #[test]
+    fn order_with_unknown_request_suggests_one() {
+        let rf = parse(&with_order(r#"["login", "get-usr"]"#));
+        assert_eq!(
+            validate_order(&rf).unwrap_err().to_string(),
+            "[config] order: no request named 'get-usr' (did you mean 'get-user'?)"
+        );
+    }
+
+    #[test]
+    fn empty_order_is_an_error() {
+        let rf = parse(&with_order("[]"));
+        assert!(
+            validate_order(&rf)
+                .unwrap_err()
+                .to_string()
+                .starts_with("[config] order is empty"),
+        );
+    }
+
+    #[test]
+    fn order_cannot_be_ignored_by_a_request() {
+        let rf = parse(
+            r#"
+            [r]
+            url = "http://x"
+            ignore_config = ["order"]
+            "#,
+        );
+        assert!(validate_ignore_config(&rf).is_err());
+    }
+
+    #[test]
+    fn repeated_request_is_warned_about_once() {
+        let rf = parse(
+            r#"
+            [config]
+            order = ["slow", "slow"]
+
+            [slow]
+            url = "http://x"
+            timeout_secs = 1
+            expect_max_ms = 2000
+            "#,
+        );
+        let requests = load_requests(&rf, None).unwrap();
+        let limits = TimeLimits::resolve(None, None);
+        assert_eq!(time_limit_warnings(&requests, &rf.config, &limits).len(), 1);
+    }
+
     #[test]
     fn without_resets_ignored_keys() {
         let config = Config {
@@ -518,6 +676,7 @@ mod tests {
             expect_max_ms: Some(500),
             retry: Some(3),
             retry_delay_ms: Some(250),
+            order: None,
         };
         let config = config.without(&[
             "auth".to_string(),
