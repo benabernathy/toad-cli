@@ -159,6 +159,20 @@ toad api.toml get-task --var task_id=asdf123
 Repeat `--var` to set more than one. The variable must be declared in `[vars]`, a profile, or a capture, so a
 misspelled name is an error. See [doc/cli_vars.md](doc/cli_vars.md).
 
+### Step Mode and Breakpoints
+
+Run a collection one request at a time with `--step`, or stop before a request with `--break <request>`:
+
+```
+$ toad flow.toml --break get-author -o quiet
+[get-post] 200 (80ms)
+breakpoint: next request is 'get-author'
+[s]tep, [c]ontinue, [r]un to end, [q]uit: s
+```
+
+Press `s` to run the next request, `c` to run to the next breakpoint, `r` to run to the end, or `q` to quit.
+Breakpoints are only set on the command line, never in the collection file. See [doc/step.md](doc/step.md).
+
 ### Response Time Assertions
 
 Fail a request that takes too long with `expect_max_ms`, per request or as a `[config]` default:

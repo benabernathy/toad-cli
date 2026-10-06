@@ -42,8 +42,19 @@ fn misspelled_section(name: &str) -> Option<&'static str> {
         .find(|section| edit_distance(&name.to_lowercase(), section) <= 2)
 }
 
+/// The candidate closest to `name`, ignoring case, if it is within two edits. Used for "did you
+/// mean" hints.
+pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    candidates
+        .into_iter()
+        .map(|c| (edit_distance(&name.to_lowercase(), &c.to_lowercase()), c))
+        .filter(|(distance, _)| *distance <= 2)
+        .min()
+        .map(|(_, c)| c)
+}
+
 /// Levenshtein distance between two strings.
-pub fn edit_distance(a: &str, b: &str) -> usize {
+fn edit_distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.chars().enumerate() {

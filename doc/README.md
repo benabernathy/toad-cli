@@ -16,6 +16,7 @@ from a single request up to a CI smoke test.
 | [Environment Variables](env_vars.md)       | Reading values from the environment with `{{env:NAME}}`, and the check toad runs before sending anything |
 | [Variable Capture](variable_capture.md)    | Capturing values from a response with JSONPath, headers, or status, using them in later requests, and sending literal `{{...}}` text |
 | [Command Line Variables](cli_vars.md)     | Setting a variable for one run with `--var`, and which value wins               |
+| [Step Mode and Breakpoints](step.md)      | Running one request at a time with `--step`, and stopping before a request with `--break` |
 | [Response Time Assertions](response_time.md) | Failing slow requests with `expect_max_ms`, and scaling limits with `--time-scale` |
 | [Retry on Failure](retry.md)               | Retrying failed requests with `retry`, and what counts as a failure             |
 | [JSON Schema](schema.md)                   | Autocomplete and misspelled-setting warnings in VS Code and other editors       |
@@ -29,6 +30,8 @@ from a single request up to a CI smoke test.
 | `-l, --list-requests`           |                      | Lists the requests in the collection     |
 | `-p, --profile <NAME>`          |                      | Merges a `[profiles.<NAME>]` table into `[vars]` |
 | `--var <NAME=VALUE>`            |                      | [Command Line Variables](cli_vars.md)    |
+| `-s, --step`                    |                      | [Step Mode and Breakpoints](step.md)     |
+| `-b, --break <REQUEST>`         |                      | [Step Mode and Breakpoints](step.md)     |
 | `--use-custom-ca <FILE>`        |                      | [Custom CA](custom_ca.md)                |
 | `--use-custom-ca-password <PW>` | `TOAD_CA_PASSWORD`   | [Custom CA](custom_ca.md)                |
 | `--time-scale <FACTOR\|off>`    | `TOAD_TIME_SCALE`    | [Response Time Assertions](response_time.md) |
