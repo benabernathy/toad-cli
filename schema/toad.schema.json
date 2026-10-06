@@ -66,6 +66,9 @@
           "default": {},
           "description": "Values to read from the response into variables for later requests. Each value is a\nJSONPath query starting with \"$\", \"header:<Name>\", \"status\", or \"body\".",
           "propertyNames": {
+            "not": {
+              "pattern": "^env:"
+            },
             "pattern": "^[^\\s{}]+$"
           },
           "type": "object"
@@ -182,6 +185,11 @@
         "additionalProperties": {
           "type": "string"
         },
+        "propertyNames": {
+          "not": {
+            "pattern": "^env:"
+          }
+        },
         "type": "object"
       },
       "description": "Named sets of variables, chosen with --profile. A profile's values replace the ones in [vars].",
@@ -192,6 +200,11 @@
         "type": "string"
       },
       "description": "Variables used as {{name}} in requests.",
+      "propertyNames": {
+        "not": {
+          "pattern": "^env:"
+        }
+      },
       "type": "object"
     }
   },

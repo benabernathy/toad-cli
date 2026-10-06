@@ -45,7 +45,7 @@ pub fn status_codes(_: &mut SchemaGenerator) -> Schema {
 pub fn captures(_: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "object",
-        "propertyNames": { "pattern": "^[^\\s{}]+$" },
+        "propertyNames": { "pattern": "^[^\\s{}]+$", "not": { "pattern": "^env:" } },
         "additionalProperties": {
             "type": "string",
             "pattern": "^(\\$.*|header:.+|status|body)$"
@@ -70,6 +70,8 @@ fn generate() -> Value {
     let config = generator.subschema_for::<Config>();
     let request = generator.subschema_for::<RequestDef>();
     let definitions = generator.take_definitions(true);
+    // Matches `variables::validate_names`
+    let not_env = json!({ "not": { "pattern": "^env:" } });
 
     let mut schema = json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -81,6 +83,7 @@ fn generate() -> Value {
             "vars": {
                 "description": "Variables used as {{name}} in requests.",
                 "type": "object",
+                "propertyNames": not_env,
                 "additionalProperties": { "type": "string" }
             },
             "profiles": {
@@ -88,6 +91,7 @@ fn generate() -> Value {
                 "type": "object",
                 "additionalProperties": {
                     "type": "object",
+                    "propertyNames": not_env,
                     "additionalProperties": { "type": "string" }
                 }
             }
@@ -126,6 +130,7 @@ fn remove_null_types(value: &mut Value) {
 mod tests {
     use super::*;
     use crate::collection::{RequestFile, parse_captures, validate_ignore_config};
+    use crate::variables::validate_names;
     use std::{fs, path::PathBuf};
 
     fn schema_path() -> PathBuf {
@@ -148,7 +153,9 @@ mod tests {
         let Ok(mut rf) = RequestFile::parse(collection) else {
             return false;
         };
-        parse_captures(&mut rf).is_ok() && validate_ignore_config(&rf).is_ok()
+        parse_captures(&mut rf).is_ok()
+            && validate_ignore_config(&rf).is_ok()
+            && validate_names(&rf).is_ok()
     }
     #[test]
     fn schema_file_is_up_to_date() {
@@ -211,6 +218,13 @@ token = "def"
 [r]
 url = "http://x"
 method = "PROPFIND""#,
+            r#"[vars]
+token = "{{env:API_TOKEN}}"
+[profiles.ci]
+token = "{{env:CI_TOKEN}}"
+[r]
+url = "http://x"
+auth = "bearer {{env:API_TOKEN}}""#,
             // rejected
             r#"[r]
 url = "http://x"
@@ -232,6 +246,14 @@ url = "http://x"
 "my id" = "$.id""#,
             r#"[vars]
 user_id = 1"#,
+            r#"[vars]
+"env:HOME" = "x""#,
+            r#"[profiles.ci]
+"env:HOME" = "x""#,
+            r#"[r]
+url = "http://x"
+[r.capture]
+"env:id" = "$.id""#,
             r#"[r]
 url = "http://x"
 timeout_secs = "30""#,
