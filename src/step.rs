@@ -8,7 +8,8 @@ use anyhow::{Result, anyhow};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal;
 
-use crate::collection::{RequestFile, closest};
+use crate::collection::Collection;
+use crate::collection_file::closest;
 
 /// What to do at a stop.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -78,12 +79,12 @@ impl Stepper {
 }
 
 /// Checks that every `--break` name is a request in the collection.
-pub fn check_breakpoints(rf: &RequestFile, breakpoints: &[String]) -> Result<()> {
+pub fn check_breakpoints(collection: &Collection, breakpoints: &[String]) -> Result<()> {
     for name in breakpoints {
-        if rf.requests.contains_key(name) {
+        if collection.requests.contains_key(name) {
             continue;
         }
-        let hint = closest(name, rf.requests.keys().map(String::as_str))
+        let hint = closest(name, collection.requests.keys().map(String::as_str))
             .map(|n| format!(" (did you mean '{n}'?)"))
             .unwrap_or_default();
         return Err(anyhow!("--break '{name}': no request named '{name}'{hint}"));
@@ -255,14 +256,14 @@ mod tests {
 
     #[test]
     fn unknown_breakpoint_suggests_a_request() {
-        let rf = RequestFile::parse(
+        let collection = Collection::parse(
             r#"
             [get-user]
             url = "http://x"
             "#,
         )
         .unwrap();
-        let err = check_breakpoints(&rf, &["get-usr".to_string()]).unwrap_err();
+        let err = check_breakpoints(&collection, &["get-usr".to_string()]).unwrap_err();
         assert_eq!(
             err.to_string(),
             "--break 'get-usr': no request named 'get-usr' (did you mean 'get-user'?)"

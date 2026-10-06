@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Result, anyhow};
 
-use crate::collection::{Config, RequestDef, RequestFile, closest};
+use crate::collection::{Collection, Request};
+use crate::collection_file::closest;
 use crate::interpolate::{
     ENV_PREFIX, Env, env_not_set, references, resolve_env, undefined_variable,
 };
@@ -46,26 +47,24 @@ pub fn resolve_vars(vars: HashMap<String, String>, env: &Env) -> ResolvedVars {
 /// Checks every variable used by `requests`, in run order. A variable captured by an earlier
 /// request counts as defined. Returns (request name, problem) pairs, empty if the run can start.
 pub fn check_requests(
-    requests: &[(String, RequestDef)],
-    config: &Config,
+    requests: &[&Request],
     resolved: &ResolvedVars,
     env: &Env,
 ) -> Vec<(String, String)> {
     let mut captured: HashSet<&str> = HashSet::new();
     let mut problems = Vec::new();
 
-    for (request_name, req) in requests {
-        let config = config.without(&req.ignore_config);
+    for req in requests {
         let mut checked = HashSet::new();
-        for name in used_names(req, &config) {
+        for name in used_names(req) {
             if !checked.insert(name.clone()) {
                 continue;
             }
             if let Some(problem) = check_name(&name, &captured, resolved, env) {
-                problems.push((request_name.clone(), problem));
+                problems.push((req.name.clone(), problem));
             }
         }
-        captured.extend(req.capture.keys().map(String::as_str));
+        captured.extend(req.captures.iter().map(|c| c.name.as_str()));
     }
     problems
 }
@@ -94,36 +93,19 @@ fn check_name(
 }
 
 /// The `{{name}}` references in every part of the request that is interpolated when it is sent.
-fn used_names(req: &RequestDef, config: &Config) -> Vec<String> {
+fn used_names(req: &Request) -> Vec<String> {
     let mut texts: Vec<&str> = vec![&req.url];
     texts.extend(req.headers.values().map(String::as_str));
     texts.extend(req.query.values().map(String::as_str));
-    if let Some(auth) = req.auth.as_deref().or(config.auth.as_deref()) {
+    if let Some(auth) = &req.auth {
         texts.push(auth);
     }
-    if req.interpolate_body
-        && let Some(body) = &req.body
+    if let Some(body) = &req.body
+        && body.interpolate
     {
-        texts.push(body);
+        texts.push(&body.text);
     }
     texts.into_iter().flat_map(references).collect()
-}
-
-/// `{{env:NAME}}` always reads the environment, so a variable named `env:...` could never be
-/// used.
-pub fn validate_names(rf: &RequestFile) -> Result<()> {
-    let reserved = |name: &String| name.starts_with(ENV_PREFIX);
-    if let Some(name) = rf.vars.keys().find(|n| reserved(n)) {
-        return Err(reserved_name_error(&format!("[vars] '{name}'")));
-    }
-    for (profile, vars) in &rf.profiles {
-        if let Some(name) = vars.keys().find(|n| reserved(n)) {
-            return Err(reserved_name_error(&format!(
-                "[profiles.{profile}] '{name}'"
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// Parses a `--var NAME=VALUE` argument. The value is everything after the first `=`, so it can
@@ -137,13 +119,18 @@ pub fn parse_cli_var(arg: &str) -> Result<(String, String), String> {
 
 /// `--var` can only set a variable declared in `[vars]`, a profile, or a capture, so a misspelled
 /// name is an error instead of a value that is never used.
-pub fn check_cli_vars(rf: &RequestFile, cli_vars: &[(String, String)]) -> Result<()> {
-    let declared: HashSet<&str> = rf
+pub fn check_cli_vars(collection: &Collection, cli_vars: &[(String, String)]) -> Result<()> {
+    let declared: HashSet<&str> = collection
         .vars
         .keys()
-        .chain(rf.profiles.values().flat_map(HashMap::keys))
-        .chain(rf.requests.values().flat_map(|r| r.capture.keys()))
+        .chain(collection.profiles.values().flat_map(HashMap::keys))
         .map(String::as_str)
+        .chain(
+            collection
+                .requests
+                .values()
+                .flat_map(|r| r.captures.iter().map(|c| c.name.as_str())),
+        )
         .collect();
 
     for (name, _) in cli_vars {
@@ -172,7 +159,6 @@ pub fn reserved_name_error(what: &str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection::load_requests;
 
     fn env(name: &str) -> Option<String> {
         match name {
@@ -183,10 +169,10 @@ mod tests {
     }
 
     fn problems(collection: &str) -> Vec<(String, String)> {
-        let rf = RequestFile::parse(collection).unwrap();
-        let requests = load_requests(&rf, None).unwrap();
-        let resolved = resolve_vars(rf.vars.clone(), &env);
-        check_requests(&requests, &rf.config, &resolved, &env)
+        let collection = Collection::parse(collection).unwrap();
+        let requests = collection.requests_to_run(None).unwrap();
+        let resolved = resolve_vars(collection.vars.clone(), &env);
+        check_requests(&requests, &resolved, &env)
     }
 
     #[test]
@@ -269,8 +255,8 @@ mod tests {
     }
 
     fn cli_var_error(collection: &str, name: &str) -> Option<String> {
-        let rf = RequestFile::parse(collection).unwrap();
-        check_cli_vars(&rf, &[(name.to_string(), "x".to_string())])
+        let collection = Collection::parse(collection).unwrap();
+        check_cli_vars(&collection, &[(name.to_string(), "x".to_string())])
             .err()
             .map(|e| e.to_string())
     }
@@ -320,22 +306,6 @@ mod tests {
         let err = cli_var_error(DECLARED, "env:HOME").unwrap();
         assert!(
             err.starts_with("--var 'env:HOME': names starting with 'env:' are reserved"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn env_prefix_is_reserved_in_profiles() {
-        let rf = RequestFile::parse(
-            r#"
-            [profiles.ci]
-            "env:TOKEN" = "x"
-            "#,
-        )
-        .unwrap();
-        let err = validate_names(&rf).unwrap_err().to_string();
-        assert!(
-            err.starts_with("[profiles.ci] 'env:TOKEN': names starting with 'env:' are reserved"),
             "{err}"
         );
     }

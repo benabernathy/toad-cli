@@ -8,7 +8,7 @@ use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::ca::load_custom_ca_certificates;
-use crate::collection::{Config, RequestDef};
+use crate::collection::Request;
 use crate::interpolate::interpolate;
 use crate::retry::RetryPolicy;
 use crate::time_limit::TimeLimits;
@@ -25,16 +25,15 @@ pub struct RunContext<'a> {
 }
 
 pub fn execute_request(
-    name: &str,
-    req: &RequestDef,
+    req: &Request,
     vars: &HashMap<String, String>,
-    config: Config,
     retry: &RetryPolicy,
     ctx: &RunContext,
 ) -> Result<Vec<(String, String)>> {
     let output = ctx.output;
+    let name = req.name.as_str();
     let url = interpolate(&req.url, vars)?;
-    let method = req.method.to_uppercase();
+    let method = &req.method;
 
     // build headers
     let mut header_map = HeaderMap::new();
@@ -43,7 +42,7 @@ pub fn execute_request(
         header_map.insert(HeaderName::from_str(k)?, HeaderValue::from_str(&v)?);
     }
 
-    if let Some(raw_auth) = req.auth.as_deref().or(config.auth.as_deref()) {
+    if let Some(raw_auth) = &req.auth {
         if header_map.contains_key(reqwest::header::AUTHORIZATION) {
             return Err(anyhow!(
                 "request '{}' sets both 'auth' and a manual 'Authorization' header - use only one",
@@ -77,9 +76,9 @@ pub fn execute_request(
 
     let mut client_builder = Client::builder()
         .timeout(std::time::Duration::from_secs(req.timeout_secs))
-        .danger_accept_invalid_certs(config.ignore_ssl);
+        .danger_accept_invalid_certs(req.tls.ignore_ssl);
 
-    if let Some(ca_path) = &config.use_custom_ca {
+    if let Some(ca_path) = &req.tls.custom_ca {
         let certs = load_custom_ca_certificates(ca_path, ctx.ca_password)
             .with_context(|| format!("could not load custom CA for request '{name}'"))?;
         for cert in certs {
@@ -123,8 +122,7 @@ pub fn execute_request(
             .try_clone()
             .ok_or_else(|| anyhow!("request '{name}' could not be prepared for sending"))?;
 
-        let Attempt { received, outcome } =
-            send_and_check(name, req, &config, &ctx.time_limits, request);
+        let Attempt { received, outcome } = send_and_check(req, &ctx.time_limits, request);
 
         match outcome {
             Ok(captured) => {
@@ -168,13 +166,8 @@ struct Attempt {
 }
 
 /// Sends one attempt and checks the response.
-fn send_and_check(
-    name: &str,
-    req: &RequestDef,
-    config: &Config,
-    time_limits: &TimeLimits,
-    request: RequestBuilder,
-) -> Attempt {
+fn send_and_check(req: &Request, time_limits: &TimeLimits, request: RequestBuilder) -> Attempt {
+    let name = &req.name;
     let start = Instant::now();
     let response = match request
         .send()
@@ -202,7 +195,7 @@ fn send_and_check(
         elapsed,
     };
 
-    let outcome = check_response(name, req, config, time_limits, &received);
+    let outcome = check_response(req, time_limits, &received);
     Attempt {
         received: Some(received),
         outcome,
@@ -219,12 +212,11 @@ fn replaced_by_cli(captured: &[(String, String)], ctx: &RunContext) -> Vec<(Stri
 
 /// Checks status, then time, then runs captures.
 fn check_response(
-    name: &str,
-    req: &RequestDef,
-    config: &Config,
+    req: &Request,
     time_limits: &TimeLimits,
     received: &Received,
 ) -> Result<Vec<(String, String)>> {
+    let name = &req.name;
     if let Some(expected) = &req.expect_status {
         let code = received.status.as_u16();
         if !expected.contains(&code) {
@@ -237,7 +229,7 @@ fn check_response(
         }
     }
 
-    if let Some(max_ms) = req.max_ms(config)
+    if let Some(max_ms) = req.max_ms
         && let Some(limit) = time_limits.effective(max_ms)
     {
         let took = received.elapsed.as_millis();
