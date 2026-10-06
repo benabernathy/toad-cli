@@ -37,7 +37,15 @@ pub trait OutputMode {
     ) {
     }
     fn request_complete(&self, _name: &str, _received: &Received) {}
-    fn request_captured(&self, _name: &str, _captured: &[(String, String)]) {}
+    /// `replaced` has the `--var` value for each captured name it replaces. Later requests use
+    /// that value instead of the captured one.
+    fn request_captured(
+        &self,
+        _name: &str,
+        _captured: &[(String, String)],
+        _replaced: &[(String, String)],
+    ) {
+    }
     /// Called instead of `request_complete` when an attempt failed and will be retried.
     /// `received` is `None` when the request could not be sent.
     fn attempt_failed(
@@ -200,10 +208,23 @@ impl OutputMode for VerboseOutput {
         println!("{}", try_pretty_json(&received.body));
     }
 
-    fn request_captured(&self, _name: &str, captured: &[(String, String)]) {
+    fn request_captured(
+        &self,
+        _name: &str,
+        captured: &[(String, String)],
+        replaced: &[(String, String)],
+    ) {
         println!("{}", "captured:".dimmed());
         for (k, v) in captured {
-            println!("  {} = {}", k.dimmed(), v);
+            match replaced.iter().find(|(name, _)| name == k) {
+                Some((_, cli_value)) => println!(
+                    "  {} = {} {}",
+                    k.dimmed(),
+                    v,
+                    format!("(replaced by --var {k}={cli_value})").yellow()
+                ),
+                None => println!("  {} = {}", k.dimmed(), v),
+            }
         }
     }
 
@@ -301,6 +322,8 @@ enum Event<'a> {
     Captured {
         name: &'a str,
         values: IndexMap<&'a str, &'a str>,
+        #[serde(skip_serializing_if = "IndexMap::is_empty")]
+        replaced: IndexMap<&'a str, &'a str>,
     },
     Error {
         name: &'a str,
@@ -369,13 +392,19 @@ impl OutputMode for JsonOutput {
         });
     }
 
-    fn request_captured(&self, name: &str, captured: &[(String, String)]) {
+    fn request_captured(
+        &self,
+        name: &str,
+        captured: &[(String, String)],
+        replaced: &[(String, String)],
+    ) {
+        fn pairs(list: &[(String, String)]) -> IndexMap<&str, &str> {
+            list.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+        }
         self.emit(Event::Captured {
             name,
-            values: captured
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect(),
+            values: pairs(captured),
+            replaced: pairs(replaced),
         });
     }
 

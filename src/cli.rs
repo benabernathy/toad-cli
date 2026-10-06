@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::retry::RetrySetting;
 use crate::time_limit::TimeScale;
+use crate::variables::parse_cli_var;
 
 #[derive(Parser)]
 #[command(name = "toad", version, about = "A developer-friendly REST client")]
@@ -25,6 +26,11 @@ pub struct Cli {
     // Optional profile name to use for vars
     #[arg(short, long)]
     pub profile: Option<String>,
+
+    /// Set a variable for this run, replacing its value from [vars], a profile, or a capture.
+    /// The variable must be declared in one of those. Repeat to set more than one.
+    #[arg(long = "var", value_name = "NAME=VALUE", value_parser = parse_cli_var)]
+    pub vars: Vec<(String, String)>,
 
     /// Print the JSON Schema for collection files and exit. Editors use it for autocomplete
     /// and to flag misspelled settings.

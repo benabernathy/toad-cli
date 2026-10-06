@@ -31,7 +31,7 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 - [ ] Breakpoints - `--break <request>` or `-b` on the command line stops before that request and puts toad into step mode. Breakpoints are never saved in the collection file [issue](https://github.com/benabernathy/toad-cli/issues/20)
 - [✅] JSON Schema for collection files — editors with TOML schema support (e.g. Even Better TOML in VS Code) get autocomplete, inline docs, and typo warnings for collection settings [documentation](doc/schema.md) / [issue](https://github.com/benabernathy/toad-cli/issues/21)
 - [✅] JSON output — `-o json` prints one JSON event per line (request start, failed attempt, response, captures, errors) for scripts, CI reports, and a future VS Code extension [documentation](doc/output_format.md#json-output) / [issue](https://github.com/benabernathy/toad-cli/issues/22)
-- [ ] Variables on the command line — `--var name=value` sets a variable for one run, replacing its value from `[vars]`, a profile, or a capture, so you can rerun a request with a different ID without editing the file [issue](https://github.com/benabernathy/toad-cli/issues/31)
+- [✅] Variables on the command line — `--var name=value` sets a variable for one run, replacing its value from `[vars]`, a profile, or a capture, so you can rerun a request with a different ID without editing the file [documentation](doc/cli_vars.md) / [issue](https://github.com/benabernathy/toad-cli/issues/31)
 
 ---
 

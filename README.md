@@ -147,6 +147,18 @@ If `API_TOKEN` isn't set, toad stops before sending anything. Only requests that
 `toad api.toml list-posts` works without a token. The same check reports an undefined `{{variable}}` before the run
 starts. See [doc/env_vars.md](doc/env_vars.md), including using secrets in GitHub Actions.
 
+### Variables on the Command Line
+
+Set a variable for one run with `--var NAME=VALUE`. It replaces the value from `[vars]`, a profile, or a capture,
+so you can run a single request with an ID you just got back, without editing the file:
+
+```
+toad api.toml get-task --var task_id=asdf123
+```
+
+Repeat `--var` to set more than one. The variable must be declared in `[vars]`, a profile, or a capture, so a
+misspelled name is an error. See [doc/cli_vars.md](doc/cli_vars.md).
+
 ### Response Time Assertions
 
 Fail a request that takes too long with `expect_max_ms`, per request or as a `[config]` default:

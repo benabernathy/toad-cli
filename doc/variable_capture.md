@@ -89,7 +89,7 @@ Because objects and arrays become JSON text, you can insert them directly into a
 - **A failed capture fails the request.** Toad exits with code 1, the same as a failed `expect_status`.
 - **Captured variables only affect requests that come later in the file.** Requests run in file order.
 - **Captured variables override `[vars]` and `--profile` variables with the same name.** The order, from highest
-  priority to lowest, is: captured, profile, `[vars]`.
+  priority to lowest, is: `--var`, captured, profile, `[vars]`. See [Command Line Variables](cli_vars.md).
 - **Captured variables exist for one run of toad.** They are not saved anywhere.
 - **Capture definitions are checked before any request is sent.** A malformed JSONPath query or an invalid capture
   source stops toad before it makes a request.
@@ -490,7 +490,9 @@ captured:
   user_id = 42
 ```
 
-Other output modes do not print captured values. Verbose output already prints request headers, including
+If `--var` replaces a captured value, the line ends with `(replaced by --var user_id=7)`. JSON output (`-o json`)
+prints a `captured` event (see [JSON Output](output_format.md#json-output)). Other output modes do not print
+captured values. Verbose output already prints request headers, including
 `Authorization`, so tokens captured from a login response will also appear in it.
 
 ## Troubleshooting
@@ -537,7 +539,8 @@ This section is for contributors.
 - `main` keeps a mutable copy of the variables (after the profile merge) and extends it after each request.
 - Each request's effective `Config` is built in `main` with `Config::without(&req.ignore_config)`.
   `--use-custom-ca` is applied after that, so it cannot be ignored.
-- `OutputMode::request_captured` has an empty default. Only `VerboseOutput` implements it.
+- `OutputMode::request_captured` has an empty default. `VerboseOutput` and `JsonOutput` implement it. It gets the
+  `--var` values that replace captured names, and `main` leaves those names out when it extends the variables.
 - Captures run as part of each attempt's checks, so a failed capture is retried when `retry` is set (see
   [doc/retry.md](retry.md)). Only the successful attempt's values are kept. A response that fails `expect_max_ms`
   is not captured from (see [doc/response_time.md](response_time.md#order-of-checks)).
