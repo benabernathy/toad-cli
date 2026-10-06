@@ -94,6 +94,7 @@ fn main() -> Result<()> {
     parse_captures(&mut rf)?;
     validate_ignore_config(&rf)?;
     variables::validate_names(&rf)?;
+    variables::check_cli_vars(&rf, &cli.vars)?;
     validate_expect_max_ms(&rf)?;
     resolve_custom_ca(&mut rf.config, file);
 
@@ -136,6 +137,7 @@ fn main() -> Result<()> {
         ca_password: ca_password.as_deref(),
         time_limits,
         output: output.as_ref(),
+        cli_vars: &cli.vars,
     };
 
     let started = Instant::now();
@@ -143,7 +145,12 @@ fn main() -> Result<()> {
     output.run_start(&names);
 
     // Report every undefined variable and unset environment variable before sending anything
-    let resolved = variables::resolve_vars(rf.vars.clone(), &interpolate::system_env);
+    let mut resolved = variables::resolve_vars(rf.vars.clone(), &interpolate::system_env);
+    // --var values replace the file's values and are used as given
+    for (name, value) in &cli.vars {
+        resolved.missing_env.remove(name);
+        resolved.vars.insert(name.clone(), value.clone());
+    }
     let problems =
         variables::check_requests(&requests, &rf.config, &resolved, &interpolate::system_env);
     if !problems.is_empty() {
@@ -172,7 +179,12 @@ fn main() -> Result<()> {
 
         let result = execute_request(name, req, &vars, config, &retry, &ctx);
         match result {
-            Ok(captured) => vars.extend(captured),
+            // A --var value also replaces a captured value
+            Ok(captured) => vars.extend(
+                captured
+                    .into_iter()
+                    .filter(|(name, _)| !cli.vars.iter().any(|(n, _)| n == name)),
+            ),
             Err(e) => {
                 output.request_error(name, &e);
                 output.run_finished(&Summary {

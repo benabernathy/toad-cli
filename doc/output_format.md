@@ -113,7 +113,8 @@ Toad stops at the first failed request, so after an `error` event the only event
 | Field    | Type   | Description |
 |----------|--------|-------------|
 | `name`   | string | The request name |
-| `values` | object | Each captured variable and its value |
+| `values` | object | Each captured variable and the value the response returned |
+| `replaced` | object | Only present when `--var` replaces a captured variable: each replaced variable and its `--var` value. Later requests use this value. See [Command Line Variables](cli_vars.md) |
 
 `error`
 

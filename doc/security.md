@@ -42,6 +42,8 @@ A collection file is meant to be committed. Don't put tokens, passwords, or API 
 - For a keystore password, set `TOAD_CA_PASSWORD` instead of passing `--use-custom-ca-password`. A password on
   the command line is saved in your shell history and can be seen by other users on the same machine while toad
   runs. Toad never reads a keystore password from the collection file.
+- The same goes for `--var`: use it for IDs and other values that aren't secret, and `{{env:NAME}}` for tokens.
+  See [Command Line Variables](cli_vars.md).
 - Get short-lived tokens by logging in at the start of the run and capturing the token, instead of storing a
   long-lived one. See [Variable Capture](variable_capture.md). The login credentials still need to come from the
   environment, and the token shows up in some output modes (see below).

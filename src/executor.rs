@@ -20,6 +20,8 @@ pub struct RunContext<'a> {
     pub ca_password: Option<&'a str>,
     pub time_limits: TimeLimits,
     pub output: &'a dyn OutputMode,
+    /// `--var` values. They replace captured values with the same name.
+    pub cli_vars: &'a [(String, String)],
 }
 
 pub fn execute_request(
@@ -130,7 +132,7 @@ pub fn execute_request(
                     output.request_complete(name, r);
                 }
                 if !captured.is_empty() {
-                    output.request_captured(name, &captured);
+                    output.request_captured(name, &captured, &replaced_by_cli(&captured, ctx));
                 }
                 return Ok(captured);
             }
@@ -205,6 +207,14 @@ fn send_and_check(
         received: Some(received),
         outcome,
     }
+}
+
+/// The `--var` value for each captured name it replaces. The last `--var` for a name wins.
+fn replaced_by_cli(captured: &[(String, String)], ctx: &RunContext) -> Vec<(String, String)> {
+    captured
+        .iter()
+        .filter_map(|(name, _)| ctx.cli_vars.iter().rev().find(|(n, _)| n == name).cloned())
+        .collect()
 }
 
 /// Checks status, then time, then runs captures.

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Result, anyhow};
 
-use crate::collection::{Config, RequestDef, RequestFile};
+use crate::collection::{Config, RequestDef, RequestFile, edit_distance};
 use crate::interpolate::{
     ENV_PREFIX, Env, env_not_set, references, resolve_env, undefined_variable,
 };
@@ -126,6 +126,52 @@ pub fn validate_names(rf: &RequestFile) -> Result<()> {
     Ok(())
 }
 
+/// Parses a `--var NAME=VALUE` argument. The value is everything after the first `=`, so it can
+/// contain `=` and commas.
+pub fn parse_cli_var(arg: &str) -> Result<(String, String), String> {
+    match arg.split_once('=') {
+        Some((name, value)) if !name.is_empty() => Ok((name.to_string(), value.to_string())),
+        _ => Err(format!("'{arg}' must be NAME=VALUE")),
+    }
+}
+
+/// `--var` can only set a variable declared in `[vars]`, a profile, or a capture, so a misspelled
+/// name is an error instead of a value that is never used.
+pub fn check_cli_vars(rf: &RequestFile, cli_vars: &[(String, String)]) -> Result<()> {
+    let declared: HashSet<&str> = rf
+        .vars
+        .keys()
+        .chain(rf.profiles.values().flat_map(HashMap::keys))
+        .chain(rf.requests.values().flat_map(|r| r.capture.keys()))
+        .map(String::as_str)
+        .collect();
+
+    for (name, _) in cli_vars {
+        if name.starts_with(ENV_PREFIX) {
+            return Err(reserved_name_error(&format!("--var '{name}'")));
+        }
+        if declared.contains(name.as_str()) {
+            continue;
+        }
+        let hint = closest(name, &declared)
+            .map(|n| format!(" (did you mean '{n}'?)"))
+            .unwrap_or_default();
+        return Err(anyhow!(
+            "--var '{name}': no variable named '{name}' in [vars], a profile, or a capture{hint}"
+        ));
+    }
+    Ok(())
+}
+
+fn closest<'a>(name: &str, candidates: &HashSet<&'a str>) -> Option<&'a str> {
+    candidates
+        .iter()
+        .map(|c| (edit_distance(&name.to_lowercase(), &c.to_lowercase()), *c))
+        .filter(|(distance, _)| *distance <= 2)
+        .min()
+        .map(|(_, c)| c)
+}
+
 pub fn reserved_name_error(what: &str) -> anyhow::Error {
     anyhow!(
         "{what}: names starting with '{ENV_PREFIX}' are reserved, because {{{{{ENV_PREFIX}NAME}}}} reads the environment variable NAME"
@@ -229,6 +275,62 @@ mod tests {
             "#,
         );
         assert_eq!(found.len(), 1, "{found:?}");
+    }
+
+    fn cli_var_error(collection: &str, name: &str) -> Option<String> {
+        let rf = RequestFile::parse(collection).unwrap();
+        check_cli_vars(&rf, &[(name.to_string(), "x".to_string())])
+            .err()
+            .map(|e| e.to_string())
+    }
+
+    const DECLARED: &str = r#"
+        [vars]
+        base_url = "http://x"
+
+        [profiles.ci]
+        token = "abc"
+
+        [start-task]
+        url = "{{base_url}}/tasks"
+        capture = { taskId = "$.id" }
+        "#;
+
+    #[test]
+    fn cli_var_parses_name_and_value() {
+        assert_eq!(parse_cli_var("id=42"), Ok(("id".into(), "42".into())));
+        assert_eq!(parse_cli_var("id="), Ok(("id".into(), "".into())));
+        assert_eq!(parse_cli_var("q=a=b,c"), Ok(("q".into(), "a=b,c".into())));
+        assert!(parse_cli_var("id").is_err());
+        assert!(parse_cli_var("=42").is_err());
+    }
+
+    #[test]
+    fn cli_var_can_set_vars_profile_values_and_captures() {
+        for name in ["base_url", "token", "taskId"] {
+            assert_eq!(cli_var_error(DECLARED, name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn cli_var_must_be_declared() {
+        assert_eq!(
+            cli_var_error(DECLARED, "taskid").unwrap(),
+            "--var 'taskid': no variable named 'taskid' in [vars], a profile, or a capture (did you mean 'taskId'?)"
+        );
+        assert_eq!(
+            cli_var_error(DECLARED, "user").unwrap(),
+            "--var 'user': no variable named 'user' in [vars], a profile, or a capture"
+        );
+    }
+
+    #[test]
+    fn cli_var_env_prefix_is_reserved() {
+        let err = cli_var_error(DECLARED, "env:HOME").unwrap();
+        assert!(
+            err.starts_with("--var 'env:HOME': names starting with 'env:' are reserved"),
+            "{err}"
+        );
     }
 
     #[test]
