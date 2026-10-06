@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Result, anyhow};
 
-use crate::collection::{Config, RequestDef, RequestFile, edit_distance};
+use crate::collection::{Config, RequestDef, RequestFile, closest};
 use crate::interpolate::{
     ENV_PREFIX, Env, env_not_set, references, resolve_env, undefined_variable,
 };
@@ -153,7 +153,7 @@ pub fn check_cli_vars(rf: &RequestFile, cli_vars: &[(String, String)]) -> Result
         if declared.contains(name.as_str()) {
             continue;
         }
-        let hint = closest(name, &declared)
+        let hint = closest(name, declared.iter().copied())
             .map(|n| format!(" (did you mean '{n}'?)"))
             .unwrap_or_default();
         return Err(anyhow!(
@@ -161,15 +161,6 @@ pub fn check_cli_vars(rf: &RequestFile, cli_vars: &[(String, String)]) -> Result
         ));
     }
     Ok(())
-}
-
-fn closest<'a>(name: &str, candidates: &HashSet<&'a str>) -> Option<&'a str> {
-    candidates
-        .iter()
-        .map(|c| (edit_distance(&name.to_lowercase(), &c.to_lowercase()), *c))
-        .filter(|(distance, _)| *distance <= 2)
-        .min()
-        .map(|(_, c)| c)
 }
 
 pub fn reserved_name_error(what: &str) -> anyhow::Error {

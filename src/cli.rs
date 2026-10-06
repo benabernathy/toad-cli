@@ -32,6 +32,21 @@ pub struct Cli {
     #[arg(long = "var", value_name = "NAME=VALUE", value_parser = parse_cli_var)]
     pub vars: Vec<(String, String)>,
 
+    /// Stop before each request and wait for a key: s to step, c to continue to the next
+    /// breakpoint, r to run to the end, q to quit
+    #[arg(short, long)]
+    pub step: bool,
+
+    /// Stop before this request and wait for a key, as with --step. Repeat it or give a
+    /// comma-separated list to stop at more than one request.
+    #[arg(
+        short = 'b',
+        long = "break",
+        value_name = "REQUEST",
+        value_delimiter = ','
+    )]
+    pub breakpoints: Vec<String>,
+
     /// Print the JSON Schema for collection files and exit. Editors use it for autocomplete
     /// and to flag misspelled settings.
     #[arg(long, conflicts_with = "file")]

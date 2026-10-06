@@ -39,6 +39,9 @@ mod variables;
 
 mod schema;
 
+mod step;
+use step::Stepper;
+
 mod retry;
 use retry::{RetryPolicy, RetrySetting};
 
@@ -103,6 +106,8 @@ fn main() -> Result<()> {
         .clone()
         .or_else(|| std::env::var("TOAD_CA_PASSWORD").ok());
 
+    step::check_breakpoints(&rf, &cli.breakpoints)?;
+
     let requests = load_requests(&rf, cli.requests.as_deref())?;
 
     if cli.list_requests {
@@ -110,6 +115,11 @@ fn main() -> Result<()> {
             println!("\t{}", name);
         }
         return Ok(());
+    }
+
+    let mut stepper = Stepper::new(cli.step, &cli.breakpoints);
+    if stepper.is_some() {
+        step::check_terminal(cli.step)?;
     }
 
     let time_limits = TimeLimits::resolve(
@@ -170,6 +180,23 @@ fn main() -> Result<()> {
     let mut vars = resolved.vars;
 
     for (i, (name, req)) in requests.iter().enumerate() {
+        if let Some(stepper) = &mut stepper
+            && stepper.should_stop(name)
+            && !stepper.press(step::ask(stepper, name)?)
+        {
+            output.run_finished(&Summary {
+                passed: i,
+                failed: 0,
+                not_run: requests.len() - i,
+                elapsed: started.elapsed(),
+            });
+            eprintln!(
+                "stopped before '{name}' ({i} of {} requests run)",
+                requests.len()
+            );
+            std::process::exit(130);
+        }
+
         // --use-custom-ca applies even when the request ignores the config's use_custom_ca
         let mut config = rf.config.without(&req.ignore_config);
         if let Some(ca_path) = &cli.use_custom_ca {
