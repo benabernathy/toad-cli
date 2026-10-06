@@ -23,6 +23,14 @@
           "description": "Skip TLS certificate verification. Only for test servers with self-signed certificates.",
           "type": "boolean"
         },
+        "order": {
+          "description": "The requests to run, in this order. A request can be listed more than once, and requests\nthat aren't listed don't run. Without it, every request runs in file order. Naming a\nrequest on the command line runs only that request.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
         "retry": {
           "description": "Retry a failed request this many more times. `retry = 3` means up to 4 attempts.",
           "format": "uint32",

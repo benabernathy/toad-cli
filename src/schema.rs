@@ -129,7 +129,7 @@ fn remove_null_types(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection::{RequestFile, parse_captures, validate_ignore_config};
+    use crate::collection::{RequestFile, parse_captures, validate_ignore_config, validate_order};
     use crate::variables::validate_names;
     use std::{fs, path::PathBuf};
 
@@ -156,6 +156,7 @@ mod tests {
         parse_captures(&mut rf).is_ok()
             && validate_ignore_config(&rf).is_ok()
             && validate_names(&rf).is_ok()
+            && validate_order(&rf).is_ok()
     }
     #[test]
     fn schema_file_is_up_to_date() {
@@ -218,6 +219,12 @@ token = "def"
 [r]
 url = "http://x"
 method = "PROPFIND""#,
+            r#"[config]
+order = ["login", "r", "r"]
+[login]
+url = "http://x/login"
+[r]
+url = "http://x""#,
             r#"[vars]
 token = "{{env:API_TOKEN}}"
 [profiles.ci]
@@ -246,6 +253,14 @@ url = "http://x"
 "my id" = "$.id""#,
             r#"[vars]
 user_id = 1"#,
+            r#"[config]
+order = []
+[r]
+url = "http://x""#,
+            r#"[config]
+order = "r"
+[r]
+url = "http://x""#,
             r#"[vars]
 "env:HOME" = "x""#,
             r#"[profiles.ci]

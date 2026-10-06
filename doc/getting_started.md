@@ -560,7 +560,7 @@ toad tutorial.toml -o quiet
 - **Every top-level table is a request, apart from `[config]`, `[vars]`, and `[profiles]`.** A misspelled
   `[confg]` is read as a request named `confg`, and fails with ``missing field `url` (did you mean [config]?)``.
 - **Requests run in file order, and captures only flow forward.** A request can use a value captured by a request
-  above it, not below it.
+  above it, not below it. To run them in a different order, see [Execution Order](order.md).
 - **JSONPlaceholder doesn't save writes.** `create-post` returns id 101 every time, and `GET /posts/101` returns
   404. Against a real API, you would capture the new id and use it in later requests. The
   [Variable Capture](variable_capture.md#create-read-update-delete) guide has that example.

@@ -231,6 +231,13 @@ mod tests {
     }
 
     #[test]
+    fn break_stops_before_each_run_of_a_repeated_request() {
+        let requests = ["login", "get", "delete", "get"];
+        let found = stops(false, &["get"], &requests, &[Key::Continue; 2]);
+        assert_eq!(found, ["get", "get"]);
+    }
+
+    #[test]
     fn quit_stops_the_run() {
         let found = stops(true, &[], REQUESTS, &[Key::Step, Key::Quit]);
         assert_eq!(found, ["login", "create"]);
