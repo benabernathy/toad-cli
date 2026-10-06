@@ -35,9 +35,21 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 
 ---
 
-## v0.6.0 — Payload Improvements
-- [ ] Form encoding support — `content_type = "application/x-www-form-urlencoded"`
-- [ ] Multipart form support
+## v0.6.0 — Testing and Payloads
+- [ ] Response assertions — an `[<request>.expect]` table checks body and header values with JSONPath, such as `"$.id" = 42` or `"$.email" = { matches = ".+@.+" }` [issue](https://github.com/benabernathy/toad-cli/issues/40)
+- [ ] JUnit XML output — `-o junit` so CI systems show each request as a test case [issue](https://github.com/benabernathy/toad-cli/issues/41)
+- [ ] Form and multipart bodies — `[<request>.form]` for `application/x-www-form-urlencoded` and `[<request>.multipart]` for file uploads [issue](https://github.com/benabernathy/toad-cli/issues/42)
+- [ ] Cookie jar and redirect control — `cookies = true` keeps session cookies across a run, `follow_redirects = false` stops at a 3xx response [issue](https://github.com/benabernathy/toad-cli/issues/43)
+- [ ] Dynamic values — `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, and `{{$randomInt}}` for unique test data [issue](https://github.com/benabernathy/toad-cli/issues/44)
+
+---
+
+## v0.7.0 — Editor and Workflow
+- [ ] VS Code extension — run a request from the editor, see the response in a panel, and set breakpoints in the gutter, using the toad binary so results match the CLI and CI [issue](https://github.com/benabernathy/toad-cli/issues/45)
+- [ ] Import and export — `toad import` converts .http files and curl commands to a collection, `toad export --curl` prints a request as a curl command [issue](https://github.com/benabernathy/toad-cli/issues/46)
+- [ ] Shared settings — `include = ["../common.toml"]` loads `[config]`, `[vars]`, and `[profiles]` from another file [issue](https://github.com/benabernathy/toad-cli/issues/47)
+- [ ] Watch mode — `--watch` reruns a request or collection each time the file is saved [issue](https://github.com/benabernathy/toad-cli/issues/48)
+- [ ] Values from commands — `{ exec = ["gcloud", "auth", "print-access-token"] }` sets a variable from a command's output, for signatures and tokens that can't be declared [issue](https://github.com/benabernathy/toad-cli/issues/49)
 
 ---
 
