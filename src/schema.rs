@@ -1,7 +1,7 @@
 //! The JSON Schema for collection files, at `schema/toad.schema.json`.
 //!
-//! The schema is generated from `Config` and `RequestDef` by a test, so it can't drift from what
-//! toad accepts. After changing either struct, regenerate it with:
+//! The schema is generated from `ConfigTable` and `RequestTable` by a test, so it can't drift from
+//! what toad accepts. After changing either struct, regenerate it with:
 //!
 //! ```text
 //! UPDATE_SCHEMA=1 cargo test schema
@@ -14,7 +14,7 @@
 pub const SCHEMA: &str = include_str!("../schema/toad.schema.json");
 
 #[cfg(test)]
-use crate::collection::{CONFIG_KEYS, Config, RequestDef};
+use crate::collection_file::{CONFIG_KEYS, ConfigTable, RequestTable};
 #[cfg(test)]
 use schemars::{Schema, SchemaGenerator, generate::SchemaSettings, json_schema};
 #[cfg(test)]
@@ -62,13 +62,13 @@ pub fn config_keys(_: &mut SchemaGenerator) -> Schema {
 }
 
 /// Builds the schema for a whole collection file. The top level is written out here because
-/// `RawRequestFile` keeps requests as raw TOML values: `config`, `vars`, and `profiles` are fixed,
+/// `RawCollectionFile` keeps requests as raw TOML values: `config`, `vars`, and `profiles` are fixed,
 /// and every other table is a request.
 #[cfg(test)]
 fn generate() -> Value {
     let mut generator = SchemaSettings::draft07().into_generator();
-    let config = generator.subschema_for::<Config>();
-    let request = generator.subschema_for::<RequestDef>();
+    let config = generator.subschema_for::<ConfigTable>();
+    let request = generator.subschema_for::<RequestTable>();
     let definitions = generator.take_definitions(true);
     // Matches `variables::validate_names`
     let not_env = json!({ "not": { "pattern": "^env:" } });
@@ -129,8 +129,7 @@ fn remove_null_types(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection::{RequestFile, parse_captures, validate_ignore_config, validate_order};
-    use crate::variables::validate_names;
+    use crate::collection::Collection;
     use std::{fs, path::PathBuf};
 
     fn schema_path() -> PathBuf {
@@ -147,17 +146,12 @@ mod tests {
             .collect()
     }
 
-    /// Whether toad accepts a collection, checking everything it checks before sending a request
-    /// that doesn't need other files.
+    /// Whether toad loads a collection, with every check it runs before sending a request. No
+    /// case uses `body_file`, so nothing outside the text is read.
     fn toad_accepts(collection: &str) -> bool {
-        let Ok(mut rf) = RequestFile::parse(collection) else {
-            return false;
-        };
-        parse_captures(&mut rf).is_ok()
-            && validate_ignore_config(&rf).is_ok()
-            && validate_names(&rf).is_ok()
-            && validate_order(&rf).is_ok()
+        Collection::parse(collection).is_ok()
     }
+
     #[test]
     fn schema_file_is_up_to_date() {
         let generated = serde_json::to_string_pretty(&generate()).unwrap() + "\n";

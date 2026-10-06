@@ -1,280 +1,244 @@
-use crate::capture::Capture;
-use crate::interpolate::interpolate;
-use crate::time_limit::TimeLimits;
+//! The collection as a run uses it. `Collection::load` reads the file, checks it, and resolves
+//! everything that doesn't change while toad runs: `body_file` is read, captures are parsed,
+//! paths are resolved, and each request's `[config]` defaults and `ignore_config` are applied.
+//! Code that runs requests never sees `[config]` or `ignore_config`.
+
 use anyhow::{Context, Result, anyhow};
 use indexmap::IndexMap;
-use serde::Deserialize;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
 
+use crate::capture::Capture;
+use crate::collection_file::{CONFIG_KEYS, CollectionFile, ConfigTable, RequestTable, closest};
+use crate::interpolate::interpolate;
+use crate::time_limit::TimeLimits;
+
+/// A checked collection, ready to run.
 #[derive(Debug)]
-pub struct RequestFile {
-    pub config: Config,
+pub struct Collection {
     pub vars: HashMap<String, String>,
     pub profiles: HashMap<String, HashMap<String, String>>,
-    pub requests: IndexMap<String, RequestDef>,
-}
-
-/// The collection file as written. Requests are kept as raw tables so each one can be checked
-/// on its own, and an error can name the request it came from.
-#[derive(Deserialize)]
-struct RawRequestFile {
-    #[serde(default)]
-    config: Config,
-
-    #[serde(default)]
-    vars: HashMap<String, String>,
-
-    #[serde(default)]
-    profiles: HashMap<String, HashMap<String, String>>,
-
-    #[serde(flatten)]
-    requests: IndexMap<String, toml::Value>,
-}
-
-/// If `name` looks like a misspelling of one of the special tables, returns that table's name.
-fn misspelled_section(name: &str) -> Option<&'static str> {
-    ["config", "vars", "profiles"]
-        .into_iter()
-        .find(|section| edit_distance(&name.to_lowercase(), section) <= 2)
-}
-
-/// The candidate closest to `name`, ignoring case, if it is within two edits. Used for "did you
-/// mean" hints.
-pub fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
-    candidates
-        .into_iter()
-        .map(|c| (edit_distance(&name.to_lowercase(), &c.to_lowercase()), c))
-        .filter(|(distance, _)| *distance <= 2)
-        .min()
-        .map(|(_, c)| c)
-}
-
-/// Levenshtein distance between two strings.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let b: Vec<char> = b.chars().collect();
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.chars().enumerate() {
-        let mut cur = vec![i + 1];
-        for (j, cb) in b.iter().enumerate() {
-            let cost = usize::from(ca != *cb);
-            cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
-        }
-        prev = cur;
-    }
-    prev[b.len()]
-}
-
-impl RequestFile {
-    /// Parses a collection file. Unknown settings are an error, so a misspelled check can't be
-    /// skipped without anyone noticing.
-    pub fn parse(content: &str) -> Result<RequestFile> {
-        let raw: RawRequestFile = toml::from_str(content)?;
-
-        let mut requests = IndexMap::with_capacity(raw.requests.len());
-        for (name, value) in raw.requests {
-            if !value.is_table() {
-                return Err(anyhow!(
-                    "'{}' is not a request - every top-level table is a request, and settings for \
-                     every request go in [config]",
-                    name
-                ));
-            }
-            let request: RequestDef =
-                value
-                    .try_into()
-                    .map_err(|e: toml::de::Error| match misspelled_section(&name) {
-                        Some(section) => anyhow!(
-                            "request '{}': {} (did you mean [{}]?)",
-                            name,
-                            e.message(),
-                            section
-                        ),
-                        None => anyhow!("request '{}': {}", name, e.message()),
-                    })?;
-            requests.insert(name, request);
-        }
-
-        Ok(RequestFile {
-            config: raw.config,
-            vars: raw.vars,
-            profiles: raw.profiles,
-            requests,
-        })
-    }
-}
-
-/// Settings that apply to every request in the collection. A request's own setting wins over
-/// the one here, and `ignore_config` turns one off for a single request.
-// The doc comments here and on `RequestDef` are the descriptions in `schema/toad.schema.json`.
-#[derive(Debug, Deserialize, Default, Clone)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Config {
-    /// Skip TLS certificate verification. Only for test servers with self-signed certificates.
-    #[serde(default)]
-    pub ignore_ssl: bool,
-
-    /// Path to a CA bundle (PEM, JKS, or PKCS12) to trust, relative to the collection file.
-    /// The keystore password comes from `--use-custom-ca-password` or `TOAD_CA_PASSWORD`.
-    #[serde(default)]
-    pub use_custom_ca: Option<String>,
-
-    /// Authorization shorthand for every request: "bearer <token>" or "basic <user>:<pass>",
-    /// e.g. "bearer {{token}}".
-    #[serde(default)]
-    pub auth: Option<String>,
-
-    /// Fail a request that takes longer than this many milliseconds.
-    #[serde(default)]
-    pub expect_max_ms: Option<u64>,
-
-    /// Retry a failed request this many more times. `retry = 3` means up to 4 attempts.
-    #[serde(default)]
-    pub retry: Option<u32>,
-
-    /// Milliseconds to wait between retries. Defaults to 1000.
-    #[serde(default)]
-    pub retry_delay_ms: Option<u64>,
-
-    /// The requests to run, in this order. A request can be listed more than once, and requests
-    /// that aren't listed don't run. Without it, every request runs in file order. Naming a
-    /// request on the command line runs only that request.
-    #[serde(default)]
-    #[cfg_attr(test, schemars(length(min = 1)))]
+    /// Every request, in file order
+    pub requests: IndexMap<String, Request>,
+    /// `[config] order`. Every name is a request.
     pub order: Option<Vec<String>>,
 }
 
-/// One request. Every top-level table other than `[config]`, `[vars]`, and `[profiles]` is a
-/// request, and the table name is the request name.
-#[derive(Debug, Deserialize, Clone)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct RequestDef {
-    /// HTTP method. Defaults to GET.
-    #[serde(default = "default_method")]
-    #[cfg_attr(test, schemars(schema_with = "crate::schema::method"))]
+/// One request, with its `[config]` defaults applied.
+#[derive(Debug, Clone)]
+pub struct Request {
+    pub name: String,
+    /// Uppercase
     pub method: String,
-
-    /// URL to send the request to, e.g. "{{base_url}}/users/1".
     pub url: String,
-
-    /// Request headers, e.g. { Accept = "application/json" }.
-    #[serde(default)]
     pub headers: HashMap<String, String>,
-
-    /// Query string parameters, added to the URL.
-    #[serde(default)]
     pub query: HashMap<String, String>,
-
-    /// Request body. Use either `body` or `body_file`, not both.
-    pub body: Option<String>,
-
-    /// Path to a file to send as the request body, relative to the collection file.
-    pub body_file: Option<String>,
-
-    /// When false, `body`/`body_file` is sent exactly as written, without `{{var}}` interpolation
-    #[serde(default = "default_true")]
-    pub interpolate_body: bool,
-
-    /// Authorization shorthand: "bearer <token>" or "basic <user>:<pass>", e.g.
-    /// "bearer {{token}}". Overrides `auth` in `[config]`.
-    #[serde(default)]
+    /// From `body` or the contents of `body_file`
+    pub body: Option<Body>,
+    /// The request's `auth`, or the one from `[config]`
     pub auth: Option<String>,
-
-    /// Status codes that count as a pass. Without it, any response passes.
-    // `default` keeps the schema from marking this required, since `schema_with` hides the Option
-    #[serde(default)]
-    #[cfg_attr(test, schemars(schema_with = "crate::schema::status_codes"))]
     pub expect_status: Option<Vec<u16>>,
-
-    /// Fail the request if it takes longer than this many milliseconds. Overrides
-    /// `expect_max_ms` in `[config]`.
-    pub expect_max_ms: Option<u64>,
-
-    /// Retry the request this many more times if it fails. Overrides `retry` in `[config]`.
-    pub retry: Option<u32>,
-
-    /// Milliseconds to wait between retries. Overrides `retry_delay_ms` in `[config]`.
-    pub retry_delay_ms: Option<u64>,
-
-    /// Seconds to wait for a response before giving up. Defaults to 30.
-    #[serde(default = "default_timeout")]
+    /// The request's `expect_max_ms`, or the one from `[config]`
+    pub max_ms: Option<u64>,
+    pub retry: RetrySettings,
     pub timeout_secs: u64,
-
-    /// Values to read from the response into variables for later requests. Each value is a
-    /// JSONPath query starting with "$", "header:<Name>", "status", or "body".
-    #[serde(default)]
-    #[cfg_attr(test, schemars(schema_with = "crate::schema::captures"))]
-    pub capture: IndexMap<String, String>,
-
-    /// `[config]` settings to ignore for this request.
-    #[serde(default)]
-    #[cfg_attr(test, schemars(schema_with = "crate::schema::config_keys"))]
-    pub ignore_config: Vec<String>,
-
-    /// Parsed from `capture` by `parse_captures`.
-    #[serde(skip)]
     pub captures: Vec<Capture>,
+    pub tls: Tls,
 }
 
-impl RequestDef {
-    /// The body as it will be sent: interpolated, unless `interpolate_body` is false.
-    pub fn resolved_body(&self, vars: &HashMap<String, String>) -> Option<Result<String>> {
-        self.body.as_ref().map(|body| {
-            if self.interpolate_body {
-                interpolate(body, vars)
-            } else {
-                Ok(body.clone())
-            }
+#[derive(Debug, Clone)]
+pub struct Body {
+    pub text: String,
+    /// False when `interpolate_body = false`
+    pub interpolate: bool,
+}
+
+/// Retry settings from the file. `--retry` and `TOAD_RETRY` are applied by `RetryPolicy` when the
+/// request runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetrySettings {
+    /// The request's own `retry`
+    pub retry: Option<u32>,
+    pub default: RetryDefault,
+    /// The request's `retry_delay_ms`, or the one from `[config]`
+    pub delay_ms: Option<u64>,
+}
+
+/// Where a request's default retry count comes from when it has no `retry` of its own.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RetryDefault {
+    /// `[config] retry`, which `--retry N` replaces. `None` when it isn't set.
+    Config(Option<u32>),
+    /// The request has `ignore_config = ["retry"]`, so neither `[config] retry` nor
+    /// `--retry N` applies.
+    Ignored,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Tls {
+    pub ignore_ssl: bool,
+    /// `use_custom_ca`, resolved against the collection file's directory, or the path given
+    /// with `--use-custom-ca`
+    pub custom_ca: Option<String>,
+}
+
+impl Collection {
+    /// Reads, parses, and checks a collection file.
+    pub fn load(path: &Path) -> Result<Collection> {
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("could not read {}", path.display()))?;
+        let file = CollectionFile::parse(&content)
+            .with_context(|| format!("could not parse {}", path.display()))?;
+        Collection::from_file(file, path.parent().unwrap_or(Path::new(".")))
+    }
+
+    /// Checks a parsed file and builds the collection. `base_dir` is where `body_file` and
+    /// `use_custom_ca` paths are relative to.
+    pub fn from_file(file: CollectionFile, base_dir: &Path) -> Result<Collection> {
+        let bodies = read_bodies(&file, base_dir)?;
+        let captures = parse_captures(&file)?;
+        validate_ignore_config(&file)?;
+        validate_names(&file)?;
+        validate_expect_max_ms(&file)?;
+        validate_order(&file)?;
+
+        let custom_ca = file.config.use_custom_ca.as_deref().map(|path| {
+            resolve_relative(path, base_dir)
+                .to_string_lossy()
+                .to_string()
+        });
+
+        let requests = file
+            .requests
+            .into_iter()
+            .zip(bodies)
+            .zip(captures)
+            .map(|(((name, table), body), captures)| {
+                let request = Request::build(
+                    name.clone(),
+                    table,
+                    &file.config,
+                    &custom_ca,
+                    body,
+                    captures,
+                );
+                (name, request)
+            })
+            .collect();
+
+        Ok(Collection {
+            vars: file.vars,
+            profiles: file.profiles,
+            requests,
+            order: file.config.order,
         })
     }
 
-    /// The `expect_max_ms` for this request: its own value, or the default from `config`.
-    pub fn max_ms(&self, config: &Config) -> Option<u64> {
-        self.expect_max_ms.or(config.expect_max_ms)
+    /// Parses and checks collection text, with relative paths resolved against the current
+    /// directory.
+    #[cfg(test)]
+    pub fn parse(content: &str) -> Result<Collection> {
+        Collection::from_file(CollectionFile::parse(content)?, Path::new("."))
     }
-}
 
-pub const CONFIG_KEYS: [&str; 6] = [
-    "auth",
-    "use_custom_ca",
-    "ignore_ssl",
-    "expect_max_ms",
-    "retry",
-    "retry_delay_ms",
-];
-
-impl Config {
-    /// Returns a copy of this config with the listed keys reset to their defaults.
-    pub fn without(&self, ignored: &[String]) -> Config {
-        let mut config = self.clone();
-        for key in ignored {
-            match key.as_str() {
-                "auth" => config.auth = None,
-                "use_custom_ca" => config.use_custom_ca = None,
-                "ignore_ssl" => config.ignore_ssl = false,
-                "expect_max_ms" => config.expect_max_ms = None,
-                "retry" => config.retry = None,
-                "retry_delay_ms" => config.retry_delay_ms = None,
-                _ => {}
+    /// The requests to run, in run order. A request named on the command line runs on its own.
+    /// Otherwise `[config] order` is used if it is set, which can list a request more than once,
+    /// and every request in file order if it isn't.
+    pub fn requests_to_run(&self, name: Option<&str>) -> Result<Vec<&Request>> {
+        match (name, &self.order) {
+            (Some(n), _) => {
+                let req = self.requests.get(n).ok_or_else(|| {
+                    let available: Vec<&String> = self.requests.keys().collect();
+                    anyhow!("no request named '{}'. Available: {:?}", n, available)
+                })?;
+                Ok(vec![req])
             }
+            (None, Some(order)) => Ok(order.iter().map(|n| &self.requests[n]).collect()),
+            (None, None) => Ok(self.requests.values().collect()),
         }
-        config
+    }
+
+    /// `--use-custom-ca` replaces every request's CA, including requests that ignore
+    /// `[config] use_custom_ca`.
+    pub fn set_custom_ca(&mut self, path: &Path) {
+        for req in self.requests.values_mut() {
+            req.tls.custom_ca = Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    /// The starting variables: `[vars]`, with the profile's values replacing them. `None` if
+    /// there is no profile with that name.
+    pub fn vars_with_profile(&self, profile: Option<&str>) -> Option<HashMap<String, String>> {
+        let mut vars = self.vars.clone();
+        if let Some(profile) = profile {
+            vars.extend(self.profiles.get(profile)?.clone());
+        }
+        Some(vars)
     }
 }
 
-fn default_method() -> String {
-    "GET".to_string()
-}
-fn default_timeout() -> u64 {
-    30
-}
-fn default_true() -> bool {
-    true
+impl Request {
+    fn build(
+        name: String,
+        table: RequestTable,
+        config: &ConfigTable,
+        custom_ca: &Option<String>,
+        body: Option<String>,
+        captures: Vec<Capture>,
+    ) -> Request {
+        let inherits = |key: &str| !table.ignore_config.iter().any(|k| k == key);
+        let from_config = |key: &str, value: Option<u64>| value.filter(|_| inherits(key));
+
+        Request {
+            method: table.method.to_uppercase(),
+            url: table.url,
+            headers: table.headers,
+            query: table.query,
+            body: body.map(|text| Body {
+                text,
+                interpolate: table.interpolate_body,
+            }),
+            auth: table
+                .auth
+                .or_else(|| config.auth.clone().filter(|_| inherits("auth"))),
+            expect_status: table.expect_status,
+            max_ms: table
+                .expect_max_ms
+                .or(from_config("expect_max_ms", config.expect_max_ms)),
+            retry: RetrySettings {
+                retry: table.retry,
+                default: if inherits("retry") {
+                    RetryDefault::Config(config.retry)
+                } else {
+                    RetryDefault::Ignored
+                },
+                delay_ms: table
+                    .retry_delay_ms
+                    .or(from_config("retry_delay_ms", config.retry_delay_ms)),
+            },
+            timeout_secs: table.timeout_secs,
+            captures,
+            tls: Tls {
+                ignore_ssl: config.ignore_ssl && inherits("ignore_ssl"),
+                custom_ca: custom_ca.clone().filter(|_| inherits("use_custom_ca")),
+            },
+            name,
+        }
+    }
+
+    /// The body as it will be sent: interpolated, unless `interpolate_body` is false.
+    pub fn resolved_body(&self, vars: &HashMap<String, String>) -> Option<Result<String>> {
+        self.body.as_ref().map(|body| {
+            if body.interpolate {
+                interpolate(&body.text, vars)
+            } else {
+                Ok(body.text.clone())
+            }
+        })
+    }
 }
 
 fn resolve_relative(path: &str, base_dir: &Path) -> PathBuf {
@@ -285,51 +249,49 @@ fn resolve_relative(path: &str, base_dir: &Path) -> PathBuf {
     }
 }
 
-pub fn load_ext_body(rf: &mut RequestFile, request_file_path: &Path) -> Result<()> {
-    let base_dir = request_file_path.parent().unwrap_or(Path::new("."));
-
-    for (request_name, request) in &mut rf.requests {
-        match (&request.body, &request.body_file) {
-            (Some(_), Some(_)) => {
-                return Err(anyhow!(
-                    "request '{}' specifies both 'body' and 'body_file' - only one may be specified",
-                    request_name
-                ));
-            }
+/// Each request's body, in file order, with `body_file` read.
+fn read_bodies(file: &CollectionFile, base_dir: &Path) -> Result<Vec<Option<String>>> {
+    file.requests
+        .iter()
+        .map(|(request_name, request)| match (&request.body, &request.body_file) {
+            (Some(_), Some(_)) => Err(anyhow!(
+                "request '{}' specifies both 'body' and 'body_file' - only one may be specified",
+                request_name
+            )),
             (None, Some(path)) => {
                 let body_path = resolve_relative(path, base_dir);
-
-                let content = fs::read_to_string(body_path).with_context(|| {
+                fs::read_to_string(body_path).map(Some).with_context(|| {
                     format!(
                         "could not read body_file '{}' in request '{}'",
                         path, request_name
                     )
-                })?;
-                request.body = Some(content);
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
-pub fn parse_captures(rf: &mut RequestFile) -> Result<()> {
-    for (request_name, request) in &mut rf.requests {
-        request.captures = request
-            .capture
-            .iter()
-            .map(|(name, expr)| {
-                Capture::parse(name, expr).with_context(|| {
-                    format!("invalid capture '{}' in request '{}'", name, request_name)
                 })
-            })
-            .collect::<Result<_>>()?;
-    }
-    Ok(())
+            }
+            (body, None) => Ok(body.clone()),
+        })
+        .collect()
 }
 
-pub fn validate_ignore_config(rf: &RequestFile) -> Result<()> {
-    for (request_name, request) in &rf.requests {
+/// Each request's captures, in file order.
+fn parse_captures(file: &CollectionFile) -> Result<Vec<Vec<Capture>>> {
+    file.requests
+        .iter()
+        .map(|(request_name, request)| {
+            request
+                .capture
+                .iter()
+                .map(|(name, expr)| {
+                    Capture::parse(name, expr).with_context(|| {
+                        format!("invalid capture '{}' in request '{}'", name, request_name)
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn validate_ignore_config(file: &CollectionFile) -> Result<()> {
+    for (request_name, request) in &file.requests {
         for key in &request.ignore_config {
             if !CONFIG_KEYS.contains(&key.as_str()) {
                 return Err(anyhow!(
@@ -344,11 +306,31 @@ pub fn validate_ignore_config(rf: &RequestFile) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_expect_max_ms(rf: &RequestFile) -> Result<()> {
-    if rf.config.expect_max_ms == Some(0) {
+/// `{{env:NAME}}` always reads the environment, so a variable named `env:...` could never be
+/// used.
+fn validate_names(file: &CollectionFile) -> Result<()> {
+    use crate::interpolate::ENV_PREFIX;
+    use crate::variables::reserved_name_error;
+
+    let reserved = |name: &String| name.starts_with(ENV_PREFIX);
+    if let Some(name) = file.vars.keys().find(|n| reserved(n)) {
+        return Err(reserved_name_error(&format!("[vars] '{name}'")));
+    }
+    for (profile, vars) in &file.profiles {
+        if let Some(name) = vars.keys().find(|n| reserved(n)) {
+            return Err(reserved_name_error(&format!(
+                "[profiles.{profile}] '{name}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_expect_max_ms(file: &CollectionFile) -> Result<()> {
+    if file.config.expect_max_ms == Some(0) {
         return Err(anyhow!("[config] expect_max_ms must be greater than 0"));
     }
-    for (request_name, request) in &rf.requests {
+    for (request_name, request) in &file.requests {
         if request.expect_max_ms == Some(0) {
             return Err(anyhow!(
                 "request '{}' has expect_max_ms = 0 - it must be greater than 0",
@@ -359,47 +341,9 @@ pub fn validate_expect_max_ms(rf: &RequestFile) -> Result<()> {
     Ok(())
 }
 
-/// Warnings for time limits that can never trigger because the request's timeout is shorter.
-pub fn time_limit_warnings(
-    requests: &[(String, RequestDef)],
-    config: &Config,
-    limits: &TimeLimits,
-) -> Vec<String> {
-    // A request listed more than once in `order` is only warned about once
-    let mut seen = HashSet::new();
-    requests
-        .iter()
-        .filter(|(name, _)| seen.insert(name))
-        .filter_map(|(name, req)| {
-            let max_ms = req.max_ms(&config.without(&req.ignore_config))?;
-            let effective = limits.effective(max_ms)?;
-            (effective >= req.timeout_secs * 1000).then(|| {
-                format!(
-                    "warning: request '{}' expects at most {}, but timeout_secs = {} will stop it first",
-                    name,
-                    limits.describe(max_ms),
-                    req.timeout_secs
-                )
-            })
-        })
-        .collect()
-}
-
-pub fn resolve_custom_ca(config: &mut Config, request_file_path: &Path) {
-    let base_dir = request_file_path.parent().unwrap_or(Path::new("."));
-
-    if let Some(path) = &config.use_custom_ca {
-        config.use_custom_ca = Some(
-            resolve_relative(path, base_dir)
-                .to_string_lossy()
-                .to_string(),
-        );
-    }
-}
-
 /// Checks that `[config] order` lists at least one request, and only requests in the collection.
-pub fn validate_order(rf: &RequestFile) -> Result<()> {
-    let Some(order) = &rf.config.order else {
+fn validate_order(file: &CollectionFile) -> Result<()> {
+    let Some(order) = &file.config.order else {
         return Ok(());
     };
     if order.is_empty() {
@@ -408,10 +352,10 @@ pub fn validate_order(rf: &RequestFile) -> Result<()> {
         ));
     }
     for name in order {
-        if rf.requests.contains_key(name) {
+        if file.requests.contains_key(name) {
             continue;
         }
-        let hint = closest(name, rf.requests.keys().map(String::as_str))
+        let hint = closest(name, file.requests.keys().map(String::as_str))
             .map(|n| format!(" (did you mean '{n}'?)"))
             .unwrap_or_default();
         return Err(anyhow!("[config] order: no request named '{name}'{hint}"));
@@ -419,140 +363,42 @@ pub fn validate_order(rf: &RequestFile) -> Result<()> {
     Ok(())
 }
 
-/// The requests to run, in run order. A request named on the command line runs on its own.
-/// Otherwise `[config] order` is used if it is set, which can list a request more than once, and
-/// every request in file order if it isn't.
-pub fn load_requests(rf: &RequestFile, name: Option<&str>) -> Result<Vec<(String, RequestDef)>> {
-    match name {
-        Some(n) => {
-            let req = rf.requests.get(n).cloned().ok_or_else(|| {
-                let available: Vec<&String> = rf.requests.keys().collect();
-                anyhow!("no request named '{}'. Available: {:?}", n, available)
-            })?;
-            Ok(vec![(n.to_string(), req)])
-        }
-        None => match &rf.config.order {
-            // validate_order has checked that every name is a request
-            Some(order) => Ok(order
-                .iter()
-                .map(|n| (n.clone(), rf.requests[n].clone()))
-                .collect()),
-            None => Ok(rf
-                .requests
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()),
-        },
-    }
+/// Warnings for time limits that can never trigger because the request's timeout is shorter.
+pub fn time_limit_warnings(requests: &[&Request], limits: &TimeLimits) -> Vec<String> {
+    // A request listed more than once in `order` is only warned about once
+    let mut seen = HashSet::new();
+    requests
+        .iter()
+        .filter(|req| seen.insert(&req.name))
+        .filter_map(|req| {
+            let max_ms = req.max_ms?;
+            let effective = limits.effective(max_ms)?;
+            (effective >= req.timeout_secs * 1000).then(|| {
+                format!(
+                    "warning: request '{}' expects at most {}, but timeout_secs = {} will stop it first",
+                    req.name,
+                    limits.describe(max_ms),
+                    req.timeout_secs
+                )
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn parse(toml_str: &str) -> RequestFile {
-        RequestFile::parse(toml_str).unwrap()
+    fn parse(toml_str: &str) -> Collection {
+        Collection::parse(toml_str).unwrap()
     }
 
-    #[test]
-    fn unknown_request_key_names_the_request() {
-        let err = RequestFile::parse(
-            r#"
-            [get-user]
-            url = "http://x"
-            expect_stauts = [200]
-            "#,
-        )
-        .unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.starts_with("request 'get-user': unknown field `expect_stauts`"),
-            "{msg}"
-        );
+    fn parse_err(toml_str: &str) -> String {
+        Collection::parse(toml_str).unwrap_err().to_string()
     }
 
-    #[test]
-    fn unknown_request_subtable_is_an_error() {
-        let err = RequestFile::parse(
-            r#"
-            [get-user]
-            url = "http://x"
-
-            [get-user.headres]
-            X-Test = "1"
-            "#,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("unknown field `headres`"));
-    }
-
-    #[test]
-    fn description_is_not_a_setting() {
-        let err = RequestFile::parse(
-            r#"
-            [get-user]
-            url = "http://x"
-            description = "Fetch a user"
-            "#,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("unknown field `description`"));
-    }
-
-    #[test]
-    fn unknown_config_key_is_an_error() {
-        let err = RequestFile::parse(
-            r#"
-            [config]
-            retyr = 3
-            "#,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("unknown field `retyr`"));
-    }
-
-    #[test]
-    fn top_level_setting_is_an_error() {
-        let err = RequestFile::parse(
-            r#"
-            retry = 3
-
-            [get-user]
-            url = "http://x"
-            "#,
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("settings for every request go in [config]")
-        );
-    }
-
-    #[test]
-    fn misspelled_config_table_gets_a_hint() {
-        let err = RequestFile::parse(
-            r#"
-            [confg]
-            retry = 3
-            "#,
-        )
-        .unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "request 'confg': missing field `url` (did you mean [config]?)"
-        );
-    }
-
-    #[test]
-    fn request_names_are_not_mistaken_for_sections() {
-        assert_eq!(misspelled_section("get-user"), None);
-        assert_eq!(misspelled_section("login"), None);
-        assert_eq!(misspelled_section("Vars"), Some("vars"));
-        assert_eq!(misspelled_section("profile"), Some("profiles"));
-    }
-
-    fn names(requests: &[(String, RequestDef)]) -> Vec<&str> {
-        requests.iter().map(|(n, _)| n.as_str()).collect()
+    fn names(requests: &[&Request]) -> Vec<String> {
+        requests.iter().map(|r| r.name.clone()).collect()
     }
 
     const FLOW: &str = r#"
@@ -575,8 +421,8 @@ mod tests {
 
     #[test]
     fn requests_run_in_file_order_by_default() {
-        let rf = parse(FLOW);
-        let requests = load_requests(&rf, None).unwrap();
+        let collection = parse(FLOW);
+        let requests = collection.requests_to_run(None).unwrap();
         assert_eq!(
             names(&requests),
             ["login", "create-user", "get-user", "delete-user"]
@@ -585,19 +431,17 @@ mod tests {
 
     #[test]
     fn order_sets_which_requests_run_and_when() {
-        let rf = parse(&with_order(r#"["login", "get-user", "create-user"]"#));
-        validate_order(&rf).unwrap();
-        let requests = load_requests(&rf, None).unwrap();
+        let collection = parse(&with_order(r#"["login", "get-user", "create-user"]"#));
+        let requests = collection.requests_to_run(None).unwrap();
         assert_eq!(names(&requests), ["login", "get-user", "create-user"]);
     }
 
     #[test]
     fn order_can_repeat_a_request() {
-        let rf = parse(&with_order(
+        let collection = parse(&with_order(
             r#"["login", "create-user", "get-user", "delete-user", "get-user"]"#,
         ));
-        validate_order(&rf).unwrap();
-        let requests = load_requests(&rf, None).unwrap();
+        let requests = collection.requests_to_run(None).unwrap();
         assert_eq!(
             names(&requests),
             [
@@ -612,46 +456,179 @@ mod tests {
 
     #[test]
     fn named_request_ignores_order() {
-        let rf = parse(&with_order(r#"["login"]"#));
-        let requests = load_requests(&rf, Some("get-user")).unwrap();
+        let collection = parse(&with_order(r#"["login"]"#));
+        let requests = collection.requests_to_run(Some("get-user")).unwrap();
         assert_eq!(names(&requests), ["get-user"]);
     }
 
     #[test]
     fn order_with_unknown_request_suggests_one() {
-        let rf = parse(&with_order(r#"["login", "get-usr"]"#));
         assert_eq!(
-            validate_order(&rf).unwrap_err().to_string(),
+            parse_err(&with_order(r#"["login", "get-usr"]"#)),
             "[config] order: no request named 'get-usr' (did you mean 'get-user'?)"
         );
     }
 
     #[test]
     fn empty_order_is_an_error() {
-        let rf = parse(&with_order("[]"));
-        assert!(
-            validate_order(&rf)
-                .unwrap_err()
-                .to_string()
-                .starts_with("[config] order is empty"),
-        );
+        assert!(parse_err(&with_order("[]")).starts_with("[config] order is empty"));
     }
 
     #[test]
     fn order_cannot_be_ignored_by_a_request() {
-        let rf = parse(
+        let err = parse_err(
             r#"
             [r]
             url = "http://x"
             ignore_config = ["order"]
             "#,
         );
-        assert!(validate_ignore_config(&rf).is_err());
+        assert!(
+            err.starts_with("unknown key 'order' in ignore_config"),
+            "{err}"
+        );
+    }
+
+    const CONFIG: &str = r#"
+        [config]
+        ignore_ssl = true
+        use_custom_ca = "ca.pem"
+        auth = "bearer {{token}}"
+        expect_max_ms = 500
+        retry = 3
+        retry_delay_ms = 250
+        "#;
+
+    #[test]
+    fn requests_inherit_config() {
+        let collection = parse(&format!("{CONFIG}\n[r]\nurl = \"http://x\""));
+        let req = &collection.requests["r"];
+        assert_eq!(req.auth.as_deref(), Some("bearer {{token}}"));
+        assert!(req.tls.ignore_ssl);
+        assert_eq!(req.tls.custom_ca.as_deref(), Some("./ca.pem"));
+        assert_eq!(req.max_ms, Some(500));
+        assert_eq!(
+            req.retry,
+            RetrySettings {
+                retry: None,
+                default: RetryDefault::Config(Some(3)),
+                delay_ms: Some(250),
+            }
+        );
+    }
+
+    #[test]
+    fn ignore_config_removes_config_settings() {
+        let collection = parse(&format!(
+            r#"{CONFIG}
+            [r]
+            url = "http://x"
+            ignore_config = ["auth", "ignore_ssl", "use_custom_ca", "expect_max_ms", "retry", "retry_delay_ms"]
+            "#
+        ));
+        let req = &collection.requests["r"];
+        assert_eq!(req.auth, None);
+        assert!(!req.tls.ignore_ssl);
+        assert_eq!(req.tls.custom_ca, None);
+        assert_eq!(req.max_ms, None);
+        assert_eq!(
+            req.retry,
+            RetrySettings {
+                retry: None,
+                default: RetryDefault::Ignored,
+                delay_ms: None,
+            }
+        );
+    }
+
+    #[test]
+    fn request_settings_override_config() {
+        let collection = parse(&format!(
+            r#"{CONFIG}
+            [r]
+            url = "http://x"
+            auth = "basic a:b"
+            expect_max_ms = 300
+            retry = 1
+            retry_delay_ms = 10
+            ignore_config = ["auth", "expect_max_ms", "retry_delay_ms"]
+            "#
+        ));
+        let req = &collection.requests["r"];
+        // ignore_config only removes the [config] value, so the request's own settings stay
+        assert_eq!(req.auth.as_deref(), Some("basic a:b"));
+        assert_eq!(req.max_ms, Some(300));
+        assert_eq!(req.retry.retry, Some(1));
+        assert_eq!(req.retry.delay_ms, Some(10));
+    }
+
+    #[test]
+    fn custom_ca_override_applies_to_every_request() {
+        let mut collection = parse(&format!(
+            r#"{CONFIG}
+            [ignores]
+            url = "http://x"
+            ignore_config = ["use_custom_ca"]
+            "#
+        ));
+        collection.set_custom_ca(Path::new("/other/ca.pem"));
+        assert_eq!(
+            collection.requests["ignores"].tls.custom_ca.as_deref(),
+            Some("/other/ca.pem")
+        );
+    }
+
+    #[test]
+    fn profile_values_replace_vars() {
+        let collection = parse(
+            r#"
+            [vars]
+            a = "1"
+            b = "2"
+
+            [profiles.ci]
+            b = "3"
+            "#,
+        );
+        let vars = collection.vars_with_profile(Some("ci")).unwrap();
+        assert_eq!((vars["a"].as_str(), vars["b"].as_str()), ("1", "3"));
+        assert!(collection.vars_with_profile(Some("nope")).is_none());
+        assert_eq!(collection.vars_with_profile(None).unwrap()["b"], "2");
+    }
+
+    #[test]
+    fn body_and_body_file_together_is_an_error() {
+        let err = parse_err(
+            r#"
+            [r]
+            url = "http://x"
+            body = "{}"
+            body_file = "body.json"
+            "#,
+        );
+        assert!(
+            err.contains("specifies both 'body' and 'body_file'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn env_prefix_is_reserved_in_profiles() {
+        let err = parse_err(
+            r#"
+            [profiles.ci]
+            "env:TOKEN" = "x"
+            "#,
+        );
+        assert!(
+            err.starts_with("[profiles.ci] 'env:TOKEN': names starting with 'env:' are reserved"),
+            "{err}"
+        );
     }
 
     #[test]
     fn repeated_request_is_warned_about_once() {
-        let rf = parse(
+        let collection = parse(
             r#"
             [config]
             order = ["slow", "slow"]
@@ -662,82 +639,36 @@ mod tests {
             expect_max_ms = 2000
             "#,
         );
-        let requests = load_requests(&rf, None).unwrap();
+        let requests = collection.requests_to_run(None).unwrap();
         let limits = TimeLimits::resolve(None, None);
-        assert_eq!(time_limit_warnings(&requests, &rf.config, &limits).len(), 1);
-    }
-
-    #[test]
-    fn without_resets_ignored_keys() {
-        let config = Config {
-            ignore_ssl: true,
-            use_custom_ca: Some("ca.pem".to_string()),
-            auth: Some("bearer {{token}}".to_string()),
-            expect_max_ms: Some(500),
-            retry: Some(3),
-            retry_delay_ms: Some(250),
-            order: None,
-        };
-        let config = config.without(&[
-            "auth".to_string(),
-            "ignore_ssl".to_string(),
-            "expect_max_ms".to_string(),
-            "retry".to_string(),
-            "retry_delay_ms".to_string(),
-        ]);
-        assert_eq!(config.auth, None);
-        assert!(!config.ignore_ssl);
-        assert_eq!(config.expect_max_ms, None);
-        assert_eq!(config.retry, None);
-        assert_eq!(config.retry_delay_ms, None);
-        assert_eq!(config.use_custom_ca.as_deref(), Some("ca.pem"));
-    }
-
-    #[test]
-    fn request_max_ms_overrides_config() {
-        let rf = parse(
-            r#"
-            [config]
-            expect_max_ms = 1000
-
-            [default]
-            url = "http://x"
-
-            [tight]
-            url = "http://x"
-            expect_max_ms = 300
-            "#,
-        );
-        assert_eq!(rf.requests["default"].max_ms(&rf.config), Some(1000));
-        assert_eq!(rf.requests["tight"].max_ms(&rf.config), Some(300));
+        assert_eq!(time_limit_warnings(&requests, &limits).len(), 1);
     }
 
     #[test]
     fn zero_expect_max_ms_is_an_error() {
-        let rf = parse(
+        let err = parse_err(
             r#"
             [a]
             url = "http://x"
             expect_max_ms = 0
             "#,
         );
-        let err = validate_expect_max_ms(&rf).unwrap_err();
-        assert!(err.to_string().contains("must be greater than 0"));
+        assert!(err.contains("must be greater than 0"));
 
-        let rf = parse(
+        let err = parse_err(
             r#"
             [config]
             expect_max_ms = 0
             "#,
         );
-        assert!(validate_expect_max_ms(&rf).is_err());
+        assert!(err.contains("must be greater than 0"));
     }
 
     #[test]
     fn warns_when_limit_cannot_trigger() {
         use crate::time_limit::TimeScale;
 
-        let rf = parse(
+        let collection = parse(
             r#"
             [config]
             expect_max_ms = 15000
@@ -755,9 +686,9 @@ mod tests {
             ignore_config = ["expect_max_ms"]
             "#,
         );
-        let requests = load_requests(&rf, None).unwrap();
+        let requests = collection.requests_to_run(None).unwrap();
 
-        let warnings = time_limit_warnings(&requests, &rf.config, &TimeLimits::default());
+        let warnings = time_limit_warnings(&requests, &TimeLimits::default());
         assert_eq!(warnings.len(), 2);
         assert_eq!(
             warnings[0],
@@ -765,33 +696,29 @@ mod tests {
         );
 
         let scaled = TimeLimits::resolve(None, Some("3"));
-        let warnings = time_limit_warnings(&requests, &rf.config, &scaled);
+        let warnings = time_limit_warnings(&requests, &scaled);
         assert_eq!(warnings.len(), 3);
         assert!(warnings[0].contains("45000ms (15000ms x 3 from TOAD_TIME_SCALE)"));
 
         let off = TimeLimits::resolve(Some(TimeScale::Off), None);
-        assert!(time_limit_warnings(&requests, &rf.config, &off).is_empty());
+        assert!(time_limit_warnings(&requests, &off).is_empty());
     }
 
     #[test]
     fn unknown_ignore_config_key_is_an_error() {
-        let rf = parse(
+        let err = parse_err(
             r#"
             [login]
             url = "http://x"
             ignore_config = ["auht"]
             "#,
         );
-        let err = validate_ignore_config(&rf).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("unknown key 'auht' in ignore_config")
-        );
+        assert!(err.contains("unknown key 'auht' in ignore_config"));
     }
 
     #[test]
     fn captures_are_parsed_in_order() {
-        let mut rf = parse(
+        let collection = parse(
             r#"
             [create-user]
             url = "http://x"
@@ -801,8 +728,7 @@ mod tests {
             location = "header:Location"
             "#,
         );
-        parse_captures(&mut rf).unwrap();
-        let names: Vec<&str> = rf.requests["create-user"]
+        let names: Vec<&str> = collection.requests["create-user"]
             .captures
             .iter()
             .map(|c| c.name.as_str())
@@ -812,7 +738,7 @@ mod tests {
 
     #[test]
     fn invalid_capture_is_an_error() {
-        let mut rf = parse(
+        let err = parse_err(
             r#"
             [create-user]
             url = "http://x"
@@ -821,10 +747,6 @@ mod tests {
             user_id = "id"
             "#,
         );
-        let err = parse_captures(&mut rf).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "invalid capture 'user_id' in request 'create-user'"
-        );
+        assert_eq!(err, "invalid capture 'user_id' in request 'create-user'");
     }
 }

@@ -1,6 +1,5 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use clap::Parser;
-use std::fs;
 use std::time::Instant;
 
 mod cli;
@@ -8,22 +7,18 @@ use cli::{Cli, OutputFormat};
 
 mod interpolate;
 
+mod collection_file;
+
 mod collection;
-use collection::{
-    RequestFile, load_requests, parse_captures, resolve_custom_ca, time_limit_warnings,
-    validate_expect_max_ms, validate_ignore_config, validate_order,
-};
+use collection::{Collection, time_limit_warnings};
 
 mod executor;
 use executor::{RunContext, execute_request};
 
 mod output;
-use crate::{
-    collection::load_ext_body,
-    output::{
-        JsonOutput, NormalOutput, OutputMode, QuietOutput, RequestOnlyOutput, ResponseOnlyOutput,
-        SilentOutput, Summary, VerboseOutput,
-    },
+use output::{
+    JsonOutput, NormalOutput, OutputMode, QuietOutput, RequestOnlyOutput, ResponseOnlyOutput,
+    SilentOutput, Summary, VerboseOutput,
 };
 
 mod ca;
@@ -87,33 +82,24 @@ fn main() -> Result<()> {
         OutputFormat::Json => Box::new(JsonOutput {}),
     };
 
-    let content =
-        fs::read_to_string(file).with_context(|| format!("could not read {}", file.display()))?;
-
-    let mut rf: RequestFile = RequestFile::parse(&content)
-        .with_context(|| format!("could not parse {}", file.display()))?;
-
-    load_ext_body(&mut rf, file)?;
-    parse_captures(&mut rf)?;
-    validate_ignore_config(&rf)?;
-    variables::validate_names(&rf)?;
-    variables::check_cli_vars(&rf, &cli.vars)?;
-    validate_expect_max_ms(&rf)?;
-    validate_order(&rf)?;
-    resolve_custom_ca(&mut rf.config, file);
+    let mut collection = Collection::load(file)?;
+    variables::check_cli_vars(&collection, &cli.vars)?;
+    if let Some(ca_path) = &cli.use_custom_ca {
+        collection.set_custom_ca(ca_path);
+    }
 
     let ca_password = cli
         .use_custom_ca_password
         .clone()
         .or_else(|| std::env::var("TOAD_CA_PASSWORD").ok());
 
-    step::check_breakpoints(&rf, &cli.breakpoints)?;
+    step::check_breakpoints(&collection, &cli.breakpoints)?;
 
-    let requests = load_requests(&rf, cli.requests.as_deref())?;
+    let requests = collection.requests_to_run(cli.requests.as_deref())?;
 
     if cli.list_requests {
-        for (name, _) in &requests {
-            println!("\t{}", name);
+        for req in &requests {
+            println!("\t{}", req.name);
         }
         return Ok(());
     }
@@ -127,22 +113,20 @@ fn main() -> Result<()> {
         cli.time_scale,
         std::env::var("TOAD_TIME_SCALE").ok().as_deref(),
     );
-    for warning in time_limit_warnings(&requests, &rf.config, &time_limits) {
+    for warning in time_limit_warnings(&requests, &time_limits) {
         eprintln!("{}", warning);
     }
 
     let retry_setting =
         RetrySetting::resolve(cli.retry, std::env::var("TOAD_RETRY").ok().as_deref());
 
-    // Maybe merge vars from a profile
-    if let Some(profile_name) = &cli.profile {
-        if let Some(profile_vars) = rf.profiles.get(profile_name) {
-            rf.vars.extend(profile_vars.clone());
-        } else {
-            eprintln!("unknown profile '{}'", profile_name);
-            std::process::exit(1);
-        }
-    }
+    let Some(file_vars) = collection.vars_with_profile(cli.profile.as_deref()) else {
+        eprintln!(
+            "unknown profile '{}'",
+            cli.profile.as_deref().unwrap_or_default()
+        );
+        std::process::exit(1);
+    };
 
     let ctx = RunContext {
         ca_password: ca_password.as_deref(),
@@ -152,18 +136,17 @@ fn main() -> Result<()> {
     };
 
     let started = Instant::now();
-    let names: Vec<&str> = requests.iter().map(|(name, _)| name.as_str()).collect();
+    let names: Vec<&str> = requests.iter().map(|req| req.name.as_str()).collect();
     output.run_start(&names);
 
     // Report every undefined variable and unset environment variable before sending anything
-    let mut resolved = variables::resolve_vars(rf.vars.clone(), &interpolate::system_env);
+    let mut resolved = variables::resolve_vars(file_vars, &interpolate::system_env);
     // --var values replace the file's values and are used as given
     for (name, value) in &cli.vars {
         resolved.missing_env.remove(name);
         resolved.vars.insert(name.clone(), value.clone());
     }
-    let problems =
-        variables::check_requests(&requests, &rf.config, &resolved, &interpolate::system_env);
+    let problems = variables::check_requests(&requests, &resolved, &interpolate::system_env);
     if !problems.is_empty() {
         for (name, problem) in &problems {
             output.request_error(name, &anyhow!("{problem}"));
@@ -180,7 +163,8 @@ fn main() -> Result<()> {
     // Captured values are added to this as requests run
     let mut vars = resolved.vars;
 
-    for (i, (name, req)) in requests.iter().enumerate() {
+    for (i, req) in requests.iter().enumerate() {
+        let name = &req.name;
         if let Some(stepper) = &mut stepper
             && stepper.should_stop(name)
             && !stepper.press(step::ask(stepper, name)?)
@@ -198,14 +182,8 @@ fn main() -> Result<()> {
             std::process::exit(130);
         }
 
-        // --use-custom-ca applies even when the request ignores the config's use_custom_ca
-        let mut config = rf.config.without(&req.ignore_config);
-        if let Some(ca_path) = &cli.use_custom_ca {
-            config.use_custom_ca = Some(ca_path.to_string_lossy().to_string());
-        }
-        let retry = RetryPolicy::for_request(req, &config, retry_setting);
-
-        let result = execute_request(name, req, &vars, config, &retry, &ctx);
+        let retry = RetryPolicy::for_request(req, retry_setting);
+        let result = execute_request(req, &vars, &retry, &ctx);
         match result {
             // A --var value also replaces a captured value
             Ok(captured) => vars.extend(

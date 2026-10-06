@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::collection::{Config, RequestDef};
+use crate::collection::{Request, RetryDefault};
 
 /// Delay between attempts when `retry_delay_ms` is not set.
 pub const DEFAULT_RETRY_DELAY_MS: u64 = 1000;
@@ -59,27 +59,19 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// Works out the policy for a request. `config` is the collection config with the
-    /// request's `ignore_config` keys already removed.
-    pub fn for_request(
-        req: &RequestDef,
-        config: &Config,
-        setting: Option<RetrySetting>,
-    ) -> RetryPolicy {
-        let ignores_default = req.ignore_config.iter().any(|k| k == "retry");
-
-        let retries = match setting {
-            Some(RetrySetting::Off) => 0,
-            Some(RetrySetting::Default(n)) if !ignores_default => req.retry.unwrap_or(n),
-            _ => req.retry.or(config.retry).unwrap_or(0),
+    /// Works out the policy for a request from its settings and `--retry` / `TOAD_RETRY`.
+    pub fn for_request(req: &Request, setting: Option<RetrySetting>) -> RetryPolicy {
+        let own = req.retry.retry;
+        let retries = match (setting, req.retry.default) {
+            (Some(RetrySetting::Off), _) => 0,
+            (Some(RetrySetting::Default(n)), RetryDefault::Config(_)) => own.unwrap_or(n),
+            (_, RetryDefault::Config(default)) => own.or(default).unwrap_or(0),
+            (_, RetryDefault::Ignored) => own.unwrap_or(0),
         };
 
         RetryPolicy {
             retries,
-            delay_ms: req
-                .retry_delay_ms
-                .or(config.retry_delay_ms)
-                .unwrap_or(DEFAULT_RETRY_DELAY_MS),
+            delay_ms: req.retry.delay_ms.unwrap_or(DEFAULT_RETRY_DELAY_MS),
         }
     }
 
@@ -91,12 +83,11 @@ impl RetryPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection::RequestFile;
+    use crate::collection::Collection;
 
     fn policy(toml_str: &str, request: &str, setting: Option<RetrySetting>) -> RetryPolicy {
-        let rf = RequestFile::parse(toml_str).unwrap();
-        let req = &rf.requests[request];
-        RetryPolicy::for_request(req, &rf.config.without(&req.ignore_config), setting)
+        let collection = Collection::parse(toml_str).unwrap();
+        RetryPolicy::for_request(&collection.requests[request], setting)
     }
 
     const COLLECTION: &str = r#"

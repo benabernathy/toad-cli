@@ -4,7 +4,7 @@ use reqwest::{StatusCode, header::HeaderMap};
 use serde::Serialize;
 use std::{collections::HashMap, time::Duration};
 
-use crate::{collection::RequestDef, interpolate::interpolate};
+use crate::{collection::Request, interpolate::interpolate};
 
 /// A response as it was received, before any checks.
 pub struct Received {
@@ -29,7 +29,7 @@ pub trait OutputMode {
     fn request_start(
         &self,
         _name: &str,
-        _req: &RequestDef,
+        _req: &Request,
         _vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -69,7 +69,7 @@ impl OutputMode for NormalOutput {
     fn request_start(
         &self,
         _name: &str,
-        _req: &RequestDef,
+        _req: &Request,
         _vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -110,7 +110,7 @@ impl OutputMode for QuietOutput {
     fn request_start(
         &self,
         _name: &str,
-        _req: &RequestDef,
+        _req: &Request,
         _vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -150,7 +150,7 @@ impl OutputMode for SilentOutput {
     fn request_start(
         &self,
         _name: &str,
-        _req: &RequestDef,
+        _req: &Request,
         _vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -165,14 +165,14 @@ impl OutputMode for VerboseOutput {
     fn request_start(
         &self,
         _name: &str,
-        req: &RequestDef,
+        req: &Request,
         vars: &HashMap<String, String>,
         header_map: &HeaderMap,
         url: &str,
         _sent_url: &str,
     ) {
         println!("{}", "-- request -------------------------------".dimmed());
-        println!("{} {}", req.method.to_uppercase().cyan().bold(), url);
+        println!("{} {}", req.method.cyan().bold(), url);
         if !req.query.is_empty() {
             println!("{}", "query:".dimmed());
             for (k, v) in &req.query {
@@ -254,7 +254,7 @@ impl OutputMode for ResponseOnlyOutput {
     fn request_start(
         &self,
         _name: &str,
-        _req: &RequestDef,
+        _req: &Request,
         _vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -273,7 +273,7 @@ impl OutputMode for RequestOnlyOutput {
     fn request_start(
         &self,
         _name: &str,
-        req: &RequestDef,
+        req: &Request,
         vars: &HashMap<String, String>,
         _header_map: &HeaderMap,
         _url: &str,
@@ -363,7 +363,7 @@ impl OutputMode for JsonOutput {
     fn request_start(
         &self,
         name: &str,
-        req: &RequestDef,
+        req: &Request,
         vars: &HashMap<String, String>,
         header_map: &HeaderMap,
         _url: &str,
@@ -375,7 +375,7 @@ impl OutputMode for JsonOutput {
         }
         self.emit(Event::RequestStart {
             name,
-            method: req.method.to_uppercase(),
+            method: req.method.clone(),
             url: sent_url,
             headers,
             body: req.resolved_body(vars).and_then(Result::ok),

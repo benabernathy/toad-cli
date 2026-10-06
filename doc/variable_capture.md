@@ -523,23 +523,24 @@ This section is for contributors.
 
 - JSONPath support comes from the `serde_json_path` crate (0.7), which implements RFC 9535 and works directly on
   `serde_json::Value`. `NodeList::exactly_one()` gives the "exactly one match" behavior.
-- `RequestDef` has `capture: IndexMap<String, String>`, `ignore_config: Vec<String>`, and
-  `interpolate_body: bool` (default `true`). The parsed captures are stored in `captures`, which serde skips and
-  `parse_captures` fills in.
+- The collection has two models. `collection_file.rs` describes the TOML as written: `RequestTable` has
+  `capture: IndexMap<String, String>`, `ignore_config: Vec<String>`, and `interpolate_body: bool` (default
+  `true`), and the schema is generated from it. `collection.rs` has what a run uses: `Collection::load` checks the
+  file and builds a `Request` for each table, with `captures: Vec<Capture>` parsed, `body_file` read, and the
+  `[config]` defaults and `ignore_config` already applied. Errors are reported before any request is sent.
 - `capture.rs` holds `enum CaptureSource { JsonPath(JsonPath), Header(String), Status, Body }` and
-  `Capture::extract(status, &HeaderMap, body, json)`. `parse_captures` and `validate_ignore_config` run at load
-  time, next to `load_ext_body`, so errors are reported before any request is sent.
+  `Capture::extract(status, &HeaderMap, body, json)`.
 - `interpolate()` makes a single pass over the input and returns `Result<String>`. It fails on an undefined name,
   handles the `\{{` and `\\{{` escapes, and never interpolates an inserted value again. The previous version
   looped over the variable map and called `replace` for each entry, so a value containing `{{x}}` could be
   substituted again depending on `HashMap` iteration order.
-- `RequestDef::resolved_body` returns the body as it will be sent, honoring `interpolate_body`. The executor and
+- `Request::resolved_body` returns the body as it will be sent, honoring `interpolate_body`. The executor and
   the verbose and request-only output modes all use it, so the output matches what was sent.
 - `execute_request` keeps a copy of the response headers before `response.text()` consumes the response, runs
   captures after the `expect_status` check, and returns the captured values.
 - `main` keeps a mutable copy of the variables (after the profile merge) and extends it after each request.
-- Each request's effective `Config` is built in `main` with `Config::without(&req.ignore_config)`.
-  `--use-custom-ca` is applied after that, so it cannot be ignored.
+- `ignore_config` is applied once, when each `Request` is built. `--use-custom-ca` is applied to the built
+  requests with `Collection::set_custom_ca`, so it cannot be ignored.
 - `OutputMode::request_captured` has an empty default. `VerboseOutput` and `JsonOutput` implement it. It gets the
   `--var` values that replace captured names, and `main` leaves those names out when it extends the variables.
 - Captures run as part of each attempt's checks, so a failed capture is retried when `retry` is set (see
