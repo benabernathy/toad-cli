@@ -20,7 +20,7 @@ toad -V
 ```
 
 ```
-toad 0.4.0
+toad 0.5.0
 ```
 
 Any version from 0.4.0 on has everything this tutorial uses.
@@ -71,7 +71,7 @@ url = "{{base_url}}/posts/11"
 Run `toad tutorial.toml` again. The result is the same.
 
 Variables work in the URL, query parameters, headers, the body, and `auth`. If you use a variable that isn't
-defined, toad stops before sending the request instead of sending the literal text `{{name}}`.
+defined, toad stops before sending anything instead of sending the literal text `{{name}}`.
 
 ## 4. Checking Results
 
@@ -569,9 +569,14 @@ toad tutorial.toml -o quiet
 
 - [Variable Capture](variable_capture.md): login flows, `Location` headers, filters, pagination, and sending
   literal `{{...}}` text
+- [Environment Variables](env_vars.md): read tokens with `{{env:NAME}}` so they stay out of the collection file
+- [Variables on the Command Line](cli_vars.md): rerun a request with `--var user_id=3` without editing the file
 - [Authentication](auth.md): basic auth, collection defaults, and keeping secrets out of committed files
+- [Execution Order](order.md): run requests in a different order, or run one more than once
+- [Step Mode and Breakpoints](step.md): stop before each request with `--step`, or before one with `--break`
+- [Editor Support](schema.md): autocomplete and typo warnings for collection files in your editor
 - [Response Time Assertions](response_time.md): what's timed and how to set realistic limits
 - [Retry on Failure](retry.md): what's retried, and how `--retry` and `TOAD_RETRY` interact with the file
 - [Custom CA](custom_ca.md): calling servers whose certificates your system doesn't trust
-- [Output Format](output_format.md): every output mode
+- [Output Format](output_format.md): every output mode, including `-o json` for scripts
 - [Documentation index](README.md): every option and setting, with links
