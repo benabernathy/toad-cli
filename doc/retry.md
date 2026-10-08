@@ -50,6 +50,7 @@ Toad retries a request when anything that depends on the server's response fails
 | Connection refused, DNS failure, `timeout_secs` reached     | yes     |
 | `expect_status` does not match                              | yes     |
 | `expect_max_ms` exceeded                                    | yes     |
+| A [response assertion](assertions.md) fails                 | yes     |
 | A capture fails (no match, `null`, missing header, ...)     | yes     |
 | Undefined `{{variable}}`                                    | no      |
 | Invalid `auth`, invalid header, body is not valid JSON      | no      |

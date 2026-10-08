@@ -55,13 +55,15 @@ Each object has an `event` field with one of these values.
 | `request_start`  | A request is about to be sent |
 | `response`       | A response was received and the request is done, passed or failed |
 | `attempt_failed` | An attempt failed and the request will be retried |
+| `assertion_failed` | A [response assertion](assertions.md) failed. One event for each failed check |
 | `captured`       | A request captured values from its response |
 | `error`          | A request failed, or a check before the run found a problem |
 | `summary`        | Always last |
 
 A request that passes produces `request_start`, `response`, and `captured` if it captures anything. A request that
 fails after getting a response produces `request_start`, `response`, then `error`. A request that is retried has
-an `attempt_failed` for each failed attempt before its final `response` or `error`.
+an `attempt_failed` for each failed attempt before its final `response` or `error`. When a response fails
+assertions, an `assertion_failed` event for each one follows the `response` or `attempt_failed` event.
 
 Toad stops at the first failed request, so after an `error` event the only event left is `summary`.
 
@@ -115,6 +117,17 @@ Toad stops at the first failed request, so after an `error` event the only event
 | `name`   | string | The request name |
 | `values` | object | Each captured variable and the value the response returned |
 | `replaced` | object | Only present when `--var` replaces a captured variable: each replaced variable and its `--var` value. Later requests use this value. See [Command Line Variables](cli_vars.md) |
+
+`assertion_failed`
+
+| Field      | Type   | Description |
+|------------|--------|-------------|
+| `name`     | string | The request name |
+| `source`   | string | The key in `[<request>.expect]`, such as `$.id` or `header:Content-Type` |
+| `check`    | string | `equals`, `matches`, `contains`, `starts_with`, `exists`, `type`, or `length` |
+| `expected` | any    | The value the check was given, after variables are filled in |
+| `actual`   | any    | The value found in the response. Left out when there was no single value: nothing matched, more than one value matched, the header is missing, or the body is not JSON |
+| `message`  | string | The same text as in the error, such as `expected 42, got 43` |
 
 `error`
 

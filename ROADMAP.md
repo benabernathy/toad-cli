@@ -36,7 +36,7 @@ Toad is a developer-friendly REST client driven by TOML collection files. It is 
 ---
 
 ## v0.6.0 — Testing and Payloads
-- [ ] Response assertions — an `[<request>.expect]` table checks body and header values with JSONPath, such as `"$.id" = 42` or `"$.email" = { matches = ".+@.+" }` [issue](https://github.com/benabernathy/toad-cli/issues/40)
+- [✅] Response assertions — an `[<request>.expect]` table checks body and header values with JSONPath, such as `"$.id" = 42` or `"$.email" = { matches = ".+@.+" }` [documentation](doc/assertions.md) / [issue](https://github.com/benabernathy/toad-cli/issues/40)
 - [ ] JUnit XML output — `-o junit` so CI systems show each request as a test case [issue](https://github.com/benabernathy/toad-cli/issues/41)
 - [ ] Form and multipart bodies — `[<request>.form]` for `application/x-www-form-urlencoded` and `[<request>.multipart]` for file uploads [issue](https://github.com/benabernathy/toad-cli/issues/42)
 - [ ] Cookie jar and redirect control — `cookies = true` keeps session cookies across a run, `follow_redirects = false` stops at a 3xx response [issue](https://github.com/benabernathy/toad-cli/issues/43)

@@ -53,6 +53,39 @@ pub fn captures(_: &mut SchemaGenerator) -> Schema {
     })
 }
 
+/// Matches the checks in `Assertion::parse`, except for ones the schema can't express: a valid
+/// regular expression, and `exists` only with a JSONPath query or a header.
+#[cfg(test)]
+pub fn expect(_: &mut SchemaGenerator) -> Schema {
+    use crate::assertion::TYPES;
+    json_schema!({
+        "type": "object",
+        "propertyNames": { "pattern": "^(\\$.*|header:.+|status|body)$" },
+        "additionalProperties": {
+            "anyOf": [
+                {
+                    "description": "The value must equal this.",
+                    "type": ["string", "number", "boolean", "array"]
+                },
+                {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": false,
+                    "properties": {
+                        "equals": { "description": "The value must equal this. Use it to compare with a table." },
+                        "matches": { "description": "A regular expression the string must match somewhere. Use ^ and $ to match the whole string.", "type": "string" },
+                        "contains": { "description": "A string must contain this text, or an array must contain this item." },
+                        "starts_with": { "description": "The string must start with this text.", "type": "string" },
+                        "exists": { "description": "Whether the JSONPath query or header must find a value. false can't be combined with other checks.", "type": "boolean" },
+                        "type": { "description": "The JSON type of the value.", "enum": TYPES },
+                        "length": { "description": "The number of characters in a string, items in an array, or fields in a table.", "type": "integer", "minimum": 0 }
+                    }
+                }
+            ]
+        }
+    })
+}
+
 #[cfg(test)]
 pub fn config_keys(_: &mut SchemaGenerator) -> Schema {
     json_schema!({
@@ -226,6 +259,21 @@ token = "{{env:CI_TOKEN}}"
 [r]
 url = "http://x"
 auth = "bearer {{env:API_TOKEN}}""#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.id" = 42
+"$.name" = "{{name}}"
+"$.price" = 9.5
+"$.active" = true
+"$.roles" = ["a", "b"]
+"$.email" = { matches = ".+@.+", type = "string" }
+"$.tags" = { contains = "x", length = 2 }
+"$.address" = { equals = { city = "Austin" } }
+"$.deleted_at" = { exists = false }
+"header:Content-Type" = { starts_with = "application/json" }
+"status" = 200
+"body" = { contains = "ok" }"#,
             // rejected
             r#"[r]
 url = "http://x"
@@ -266,6 +314,30 @@ url = "http://x"
             r#"[r]
 url = "http://x"
 timeout_secs = "30""#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+id = 42"#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.id" = { equal = 42 }"#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.id" = {}"#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.id" = { type = "int" }"#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.id" = { length = -1 }"#,
+            r#"[r]
+url = "http://x"
+[r.expect]
+"$.address" = { city = "Austin" }"#,
         ];
         for case in cases {
             let errors = schema_errors(case);

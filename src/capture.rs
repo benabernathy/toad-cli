@@ -4,13 +4,38 @@ use reqwest::header::{HeaderMap, HeaderName};
 use serde_json::Value;
 use serde_json_path::{ExactlyOneError, JsonPath};
 
-/// Where in a response a captured value is read from.
+/// Where in a response a value is read from, for a capture or an assertion.
 #[derive(Debug, Clone)]
-pub enum CaptureSource {
+pub enum ResponseSource {
     JsonPath(JsonPath),
     Header(String),
     Status,
     Body,
+}
+
+impl ResponseSource {
+    /// Parses a JSONPath query starting with `$`, `header:<Name>`, `status`, or `body`.
+    pub fn parse(expr: &str) -> Result<Self> {
+        if expr.starts_with('$') {
+            let path = JsonPath::parse(expr)
+                .map_err(|e| anyhow!("'{}' is not a valid JSONPath query: {}", expr, e))?;
+            Ok(ResponseSource::JsonPath(path))
+        } else if let Some(header) = expr.strip_prefix("header:") {
+            let header = header.trim();
+            HeaderName::from_bytes(header.as_bytes())
+                .map_err(|_| anyhow!("'{}' is not a valid header name", header))?;
+            Ok(ResponseSource::Header(header.to_string()))
+        } else if expr == "status" {
+            Ok(ResponseSource::Status)
+        } else if expr == "body" {
+            Ok(ResponseSource::Body)
+        } else {
+            Err(anyhow!(
+                "'{}' must be a JSONPath query starting with '$', 'header:<Name>', 'status', or 'body'",
+                expr
+            ))
+        }
+    }
 }
 
 /// A parsed `[<request>.capture]` entry.
@@ -18,7 +43,7 @@ pub enum CaptureSource {
 pub struct Capture {
     pub name: String,
     pub expr: String,
-    pub source: CaptureSource,
+    pub source: ResponseSource,
 }
 
 impl Capture {
@@ -33,25 +58,7 @@ impl Capture {
             return Err(crate::variables::reserved_name_error(&format!("'{name}'")));
         }
 
-        let source = if expr.starts_with('$') {
-            let path = JsonPath::parse(expr)
-                .map_err(|e| anyhow!("'{}' is not a valid JSONPath query: {}", expr, e))?;
-            CaptureSource::JsonPath(path)
-        } else if let Some(header) = expr.strip_prefix("header:") {
-            let header = header.trim();
-            HeaderName::from_bytes(header.as_bytes())
-                .map_err(|_| anyhow!("'{}' is not a valid header name", header))?;
-            CaptureSource::Header(header.to_string())
-        } else if expr == "status" {
-            CaptureSource::Status
-        } else if expr == "body" {
-            CaptureSource::Body
-        } else {
-            return Err(anyhow!(
-                "'{}' must be a JSONPath query starting with '$', 'header:<Name>', 'status', or 'body'",
-                expr
-            ));
-        };
+        let source = ResponseSource::parse(expr)?;
 
         Ok(Capture {
             name: name.to_string(),
@@ -81,7 +88,7 @@ impl Capture {
         json: Option<&Value>,
     ) -> Result<String> {
         match &self.source {
-            CaptureSource::JsonPath(path) => {
+            ResponseSource::JsonPath(path) => {
                 let json = json.ok_or_else(|| anyhow!("response body is not JSON"))?;
                 let value = path.query(json).exactly_one().map_err(|e| match e {
                     ExactlyOneError::Empty => anyhow!("no value matched '{}'", self.expr),
@@ -91,7 +98,7 @@ impl Capture {
                 })?;
                 value_to_string(value)
             }
-            CaptureSource::Header(name) => {
+            ResponseSource::Header(name) => {
                 let value = headers
                     .get(name.as_str())
                     .ok_or_else(|| anyhow!("response has no '{}' header", name))?;
@@ -100,8 +107,8 @@ impl Capture {
                     .map(str::to_string)
                     .map_err(|_| anyhow!("response header '{}' is not valid text", name))
             }
-            CaptureSource::Status => Ok(status.as_u16().to_string()),
-            CaptureSource::Body => Ok(body.to_string()),
+            ResponseSource::Status => Ok(status.as_u16().to_string()),
+            ResponseSource::Body => Ok(body.to_string()),
         }
     }
 }

@@ -27,6 +27,8 @@ mod auth;
 
 mod capture;
 
+mod assertion;
+
 mod time_limit;
 use time_limit::TimeLimits;
 

@@ -16,7 +16,7 @@ commit and logs other people can read.
 | `response-only` | No                      | No           | Yes           | No              |
 | `json`          | Yes, `Authorization` hidden | Yes      | Yes           | Yes             |
 
-Error messages are printed in every mode except `silent`. They don't include header values, bodies, or captured
+Error messages are printed in every mode except `silent`. Most don't include header values, bodies, or captured
 values, but an error from sending a request includes the full URL:
 
 ```
@@ -30,8 +30,17 @@ Caused by:
     3: Connection refused (os error 61)
 ```
 
+A failed [response assertion](assertions.md) prints the value it found in the response and the value it expected,
+after variables are filled in:
+
+```
+get-user -> request 'get-user' failed 1 assertion
+  $.email: expected a match for "^.+@.+\..+$", got "toad@example"
+```
+
 So `silent` is the only mode that never prints a credential, and `quiet` is safe as long as credentials aren't in
-URLs. Send API keys in a header or with `auth` rather than in a query parameter.
+URLs or in `[<request>.expect]`. Send API keys in a header or with `auth` rather than in a query parameter, and don't
+write assertions about tokens or other secrets in a response.
 
 ## Keeping Secrets Out of Collection Files
 
@@ -71,6 +80,7 @@ masking the password doesn't hide the header.
 
 - Response bodies are printed in full, including tokens a login request returns.
 - Captured values are printed in full.
+- Failed assertions print the expected and actual values in full, in `assertion_failed` and in `error`.
 - Credentials sent another way are printed: an `X-API-Key` header, an `api_key` query parameter in the URL, or a
   password in a request body.
 
@@ -85,7 +95,7 @@ the run used test credentials that are fine to expose, or strip the bodies and c
 with [jq](https://jqlang.org/):
 
 ```
-toad api.toml -o json | jq -c 'del(.body, .values)' > toad-report.jsonl
+toad api.toml -o json | jq -c 'del(.body, .values, .expected, .actual, .message, .error)' > toad-report.jsonl
 ```
 
 ### Pull Requests From Forks

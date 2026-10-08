@@ -105,6 +105,7 @@ fn used_names(req: &Request) -> Vec<String> {
     {
         texts.push(&body.text);
     }
+    texts.extend(req.assertions.iter().flat_map(|a| a.texts()));
     texts.into_iter().flat_map(references).collect()
 }
 

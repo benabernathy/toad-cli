@@ -127,7 +127,7 @@ before sending anything and tells you which request has the problem:
 Error: could not parse tutorial.toml
 
 Caused by:
-    request 'missing-user': unknown field `expect_stauts`, expected one of `method`, `url`, `headers`, `query`, `body`, `body_file`, `interpolate_body`, `auth`, `expect_status`, `expect_max_ms`, `retry`, `retry_delay_ms`, `timeout_secs`, `capture`, `ignore_config`
+    request 'missing-user': unknown field `expect_stauts`, expected one of `method`, `url`, `headers`, `query`, `body`, `body_file`, `interpolate_body`, `auth`, `expect_status`, `expect_max_ms`, `retry`, `retry_delay_ms`, `timeout_secs`, `capture`, `expect`, `ignore_config`
 ```
 
 To leave a note about a request, use a TOML comment. Anything after `#` is ignored:

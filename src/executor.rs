@@ -7,6 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
+use crate::assertion::{Assertion, AssertionsFailed};
 use crate::ca::load_custom_ca_certificates;
 use crate::collection::Request;
 use crate::interpolate::interpolate;
@@ -74,6 +75,14 @@ pub fn execute_request(
         None
     };
 
+    // Filled in once: the variables don't change between attempts
+    let assertions = req
+        .assertions
+        .iter()
+        .map(|a| a.with_vars(vars))
+        .collect::<Result<Vec<_>>>()
+        .with_context(|| format!("request '{name}'"))?;
+
     let mut client_builder = Client::builder()
         .timeout(std::time::Duration::from_secs(req.timeout_secs))
         .danger_accept_invalid_certs(req.tls.ignore_ssl);
@@ -122,7 +131,8 @@ pub fn execute_request(
             .try_clone()
             .ok_or_else(|| anyhow!("request '{name}' could not be prepared for sending"))?;
 
-        let Attempt { received, outcome } = send_and_check(req, &ctx.time_limits, request);
+        let Attempt { received, outcome } =
+            send_and_check(req, &assertions, &ctx.time_limits, request);
 
         match outcome {
             Ok(captured) => {
@@ -144,13 +154,19 @@ pub fn execute_request(
                     attempts,
                     retry.delay_ms,
                 );
+                report_assertions(output, name, &err);
                 thread::sleep(Duration::from_millis(retry.delay_ms));
             }
-            Err(err) => {
+            Err(mut err) => {
                 if let Some(r) = &received {
                     output.request_complete(name, r);
                 }
+                report_assertions(output, name, &err);
                 if attempts > 1 {
+                    if let Some(failed) = err.downcast_mut::<AssertionsFailed>() {
+                        failed.attempts = Some(attempts);
+                        return Err(err);
+                    }
                     return Err(anyhow!("{err:#} (after {attempts} attempts)"));
                 }
                 return Err(err);
@@ -165,8 +181,20 @@ struct Attempt {
     outcome: Result<Vec<(String, String)>>,
 }
 
+/// Reports each failed assertion when `err` is an assertion failure.
+fn report_assertions(output: &dyn OutputMode, name: &str, err: &anyhow::Error) {
+    if let Some(failed) = err.downcast_ref::<AssertionsFailed>() {
+        output.assertions_failed(name, &failed.failures);
+    }
+}
+
 /// Sends one attempt and checks the response.
-fn send_and_check(req: &Request, time_limits: &TimeLimits, request: RequestBuilder) -> Attempt {
+fn send_and_check(
+    req: &Request,
+    assertions: &[Assertion],
+    time_limits: &TimeLimits,
+    request: RequestBuilder,
+) -> Attempt {
     let name = &req.name;
     let start = Instant::now();
     let response = match request
@@ -195,7 +223,7 @@ fn send_and_check(req: &Request, time_limits: &TimeLimits, request: RequestBuild
         elapsed,
     };
 
-    let outcome = check_response(req, time_limits, &received);
+    let outcome = check_response(req, assertions, time_limits, &received);
     Attempt {
         received: Some(received),
         outcome,
@@ -210,9 +238,10 @@ fn replaced_by_cli(captured: &[(String, String)], ctx: &RunContext) -> Vec<(Stri
         .collect()
 }
 
-/// Checks status, then time, then runs captures.
+/// Checks status, then time, then assertions, then runs captures.
 fn check_response(
     req: &Request,
+    assertions: &[Assertion],
     time_limits: &TimeLimits,
     received: &Received,
 ) -> Result<Vec<(String, String)>> {
@@ -243,11 +272,24 @@ fn check_response(
         }
     }
 
-    let json = if req.captures.is_empty() {
+    let json = if req.captures.is_empty() && assertions.is_empty() {
         None
     } else {
         serde_json::from_str::<serde_json::Value>(&received.body).ok()
     };
+
+    let failures: Vec<_> = assertions
+        .iter()
+        .flat_map(|a| a.check(received, json.as_ref()))
+        .collect();
+    if !failures.is_empty() {
+        return Err(AssertionsFailed {
+            request: name.clone(),
+            failures,
+            attempts: None,
+        }
+        .into());
+    }
 
     req.captures
         .iter()
