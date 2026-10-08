@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::assertion::Assertion;
 use crate::capture::Capture;
 use crate::collection_file::{CONFIG_KEYS, CollectionFile, ConfigTable, RequestTable, closest};
 use crate::interpolate::interpolate;
@@ -46,6 +47,8 @@ pub struct Request {
     pub retry: RetrySettings,
     pub timeout_secs: u64,
     pub captures: Vec<Capture>,
+    /// From `[<request>.expect]`, in file order
+    pub assertions: Vec<Assertion>,
     pub tls: Tls,
 }
 
@@ -100,6 +103,7 @@ impl Collection {
     pub fn from_file(file: CollectionFile, base_dir: &Path) -> Result<Collection> {
         let bodies = read_bodies(&file, base_dir)?;
         let captures = parse_captures(&file)?;
+        let assertions = parse_assertions(&file)?;
         validate_ignore_config(&file)?;
         validate_names(&file)?;
         validate_expect_max_ms(&file)?;
@@ -116,7 +120,8 @@ impl Collection {
             .into_iter()
             .zip(bodies)
             .zip(captures)
-            .map(|(((name, table), body), captures)| {
+            .zip(assertions)
+            .map(|((((name, table), body), captures), assertions)| {
                 let request = Request::build(
                     name.clone(),
                     table,
@@ -124,6 +129,7 @@ impl Collection {
                     &custom_ca,
                     body,
                     captures,
+                    assertions,
                 );
                 (name, request)
             })
@@ -188,6 +194,7 @@ impl Request {
         custom_ca: &Option<String>,
         body: Option<String>,
         captures: Vec<Capture>,
+        assertions: Vec<Assertion>,
     ) -> Request {
         let inherits = |key: &str| !table.ignore_config.iter().any(|k| k == key);
         let from_config = |key: &str, value: Option<u64>| value.filter(|_| inherits(key));
@@ -221,6 +228,7 @@ impl Request {
             },
             timeout_secs: table.timeout_secs,
             captures,
+            assertions,
             tls: Tls {
                 ignore_ssl: config.ignore_ssl && inherits("ignore_ssl"),
                 custom_ca: custom_ca.clone().filter(|_| inherits("use_custom_ca")),
@@ -283,6 +291,24 @@ fn parse_captures(file: &CollectionFile) -> Result<Vec<Vec<Capture>>> {
                 .map(|(name, expr)| {
                     Capture::parse(name, expr).with_context(|| {
                         format!("invalid capture '{}' in request '{}'", name, request_name)
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Each request's assertions, in file order.
+fn parse_assertions(file: &CollectionFile) -> Result<Vec<Vec<Assertion>>> {
+    file.requests
+        .iter()
+        .map(|(request_name, request)| {
+            request
+                .expect
+                .iter()
+                .map(|(expr, value)| {
+                    Assertion::parse(expr, value).with_context(|| {
+                        format!("invalid expect '{}' in request '{}'", expr, request_name)
                     })
                 })
                 .collect()

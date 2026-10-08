@@ -212,6 +212,13 @@ pub struct RequestTable {
     #[cfg_attr(test, schemars(schema_with = "crate::schema::captures"))]
     pub capture: IndexMap<String, String>,
 
+    /// Checks on the response. Each key is a JSONPath query starting with "$", "header:<Name>",
+    /// "status", or "body". Each value is the expected value, or a table of checks: equals,
+    /// matches, contains, starts_with, exists, type, length.
+    #[serde(default)]
+    #[cfg_attr(test, schemars(schema_with = "crate::schema::expect"))]
+    pub expect: IndexMap<String, toml::Value>,
+
     /// `[config]` settings to ignore for this request.
     #[serde(default)]
     #[cfg_attr(test, schemars(schema_with = "crate::schema::config_keys"))]

@@ -185,6 +185,23 @@ breakpoint: next request is 'get-author'
 Press `s` to run the next request, `c` to run to the next breakpoint, `r` to run to the end, or `q` to quit.
 Breakpoints are only set on the command line, never in the collection file. See [doc/step.md](doc/step.md).
 
+### Response Assertions
+
+Check values in the response body and headers with an `[<request>.expect]` table:
+
+```toml
+[get-user.expect]
+"$.id" = 42
+"$.email" = { matches = ".+@.+" }
+"$.roles" = { contains = "admin" }
+"$.deleted_at" = { exists = false }
+"header:Content-Type" = { starts_with = "application/json" }
+```
+
+A plain value must equal the response value. The checks are `equals`, `matches`, `contains`, `starts_with`,
+`exists`, `type`, and `length`. Every failed assertion is listed with the expected and actual values. See
+[doc/assertions.md](doc/assertions.md).
+
 ### Response Time Assertions
 
 Fail a request that takes too long with `expect_max_ms`, per request or as a `[config]` default:
@@ -217,7 +234,7 @@ url = "{{base_url}}/orders"
 retry = 0              # don't send this one twice
 ```
 
-Connection errors, `expect_status`, `expect_max_ms`, and capture failures are retried. `--retry <N|off>` or
+Connection errors, `expect_status`, `expect_max_ms`, assertion, and capture failures are retried. `--retry <N|off>` or
 `TOAD_RETRY` changes retries for a run without editing the file. See [doc/retry.md](doc/retry.md), including the
 section on requests that change data.
 

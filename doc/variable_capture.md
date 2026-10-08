@@ -84,8 +84,8 @@ Because objects and arrays become JSON text, you can insert them directly into a
 
 ## Rules
 
-- **Captures run after `expect_status`.** If the status check fails, the request fails with the status error and
-  nothing is captured.
+- **Captures run after `expect_status`, `expect_max_ms`, and `[<request>.expect]`.** If any of those checks fails,
+  the request fails with that error and nothing is captured. See [Response Assertions](assertions.md).
 - **A failed capture fails the request.** Toad exits with code 1, the same as a failed `expect_status`.
 - **Captured variables only affect requests that run later.** Requests run in file order, or in the order set
   with `order` in `[config]` (see [Execution Order](order.md)).

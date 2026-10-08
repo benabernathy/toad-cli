@@ -4,7 +4,7 @@ use reqwest::{StatusCode, header::HeaderMap};
 use serde::Serialize;
 use std::{collections::HashMap, time::Duration};
 
-use crate::{collection::Request, interpolate::interpolate};
+use crate::{assertion::AssertionFailure, collection::Request, interpolate::interpolate};
 
 /// A response as it was received, before any checks.
 pub struct Received {
@@ -58,6 +58,10 @@ pub trait OutputMode {
         _delay_ms: u64,
     ) {
     }
+    /// Called after the response of an attempt that failed one or more assertions, before
+    /// `request_error` or after `attempt_failed`. Text modes don't implement it, because the
+    /// error lists each failure.
+    fn assertions_failed(&self, _name: &str, _failures: &[AssertionFailure]) {}
     fn request_error(&self, _name: &str, _err: &anyhow::Error) {}
     /// Called once at the end of the run, whether it passed or not.
     fn run_finished(&self, _summary: &Summary) {}
@@ -325,6 +329,15 @@ enum Event<'a> {
         #[serde(skip_serializing_if = "IndexMap::is_empty")]
         replaced: IndexMap<&'a str, &'a str>,
     },
+    AssertionFailed {
+        name: &'a str,
+        source: &'a str,
+        check: &'a str,
+        expected: &'a serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actual: Option<&'a serde_json::Value>,
+        message: &'a str,
+    },
     Error {
         name: &'a str,
         error: String,
@@ -423,17 +436,30 @@ impl OutputMode for JsonOutput {
             elapsed_ms: received.map(|r| r.elapsed.as_millis()),
             headers: received.map(|r| header_object(&r.headers)),
             body: received.map(|r| r.body.as_str()),
-            error: err,
+            error: &one_line(err),
             next_attempt,
             attempts,
             delay_ms,
         });
     }
 
+    fn assertions_failed(&self, name: &str, failures: &[AssertionFailure]) {
+        for failure in failures {
+            self.emit(Event::AssertionFailed {
+                name,
+                source: &failure.expr,
+                check: failure.check,
+                expected: &failure.expected,
+                actual: failure.actual.as_ref(),
+                message: &failure.message,
+            });
+        }
+    }
+
     fn request_error(&self, name: &str, err: &anyhow::Error) {
         self.emit(Event::Error {
             name,
-            error: format!("{err:#}"),
+            error: one_line(&format!("{err:#}")),
         });
     }
 
@@ -445,6 +471,15 @@ impl OutputMode for JsonOutput {
             elapsed_ms: summary.elapsed.as_millis(),
         });
     }
+}
+
+/// Errors that span lines, such as a list of failed assertions, joined with "; ".
+fn one_line(err: &str) -> String {
+    err.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Header names are lowercase. A header sent more than once has its values joined with ", ".

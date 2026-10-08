@@ -62,7 +62,8 @@ After a response arrives, toad checks, in order:
 
 1. `expect_status`
 2. `expect_max_ms`
-3. captures (see [doc/variable_capture.md](variable_capture.md))
+3. `[<request>.expect]` (see [doc/assertions.md](assertions.md))
+4. captures (see [doc/variable_capture.md](variable_capture.md))
 
 A response with the wrong status fails with the status error, even if it was also slow. A response that is slow
 but otherwise correct fails, and nothing is captured from it.
